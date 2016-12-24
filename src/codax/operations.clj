@@ -95,12 +95,12 @@
 
 (defn- assoc-helper [tx path x]
   (if (map? x)
-    (reduce (fn [tx [k v]] (assoc-helper tx (conj path k))) x)
+    (reduce (fn [tx [k v]] (assoc-helper tx (conj path k) v)) tx x)
     (put-val tx path x)))
 
 (defn assoc-map [tx path v]
   (-> tx
-      (del-path tx path)
+      (del-path path)
       (assoc-helper path v)))
 
 (defn- collect-delete [tx path]
