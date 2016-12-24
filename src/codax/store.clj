@@ -83,9 +83,18 @@
   (let [db (if (string? filepath-or-db)
              (get @open-databases filepath-or-db)
              filepath-or-db)]
-    (reset! (:data db) nil)
-    (reset! (:cache db) nil)
-    (swap! open-databases dissoc (:filepath db))))
+    (when db
+      (reset! (:data db) nil)
+      (reset! (:cache db) nil)
+      (swap! open-databases dissoc (:filepath db)))))
+
+(defn destroy-database [filepath-or-db]
+  (close-database filepath-or-db)
+  (let [filepath (if (string? filepath-or-db)
+                   filepath-or-db
+                   (:filepath filepath-or-db))]
+    (when filepath
+      (io/delete-file filepath))))
 
 (defn- create-database [filepath]
   {:filepath filepath
