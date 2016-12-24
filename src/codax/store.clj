@@ -1,0 +1,391 @@
+(ns codax.store
+  (:require
+   [clojure.core.cache :as cache]
+   [clojure.java.io :as io]
+   [clojure.pprint :refer [pprint]]
+   [clojure.string :as str]
+   [taoensso.nippy :as nippy])
+  (:import
+   [java.io RandomAccessFile]
+   [java.nio ByteBuffer])
+  (:gen-class))
+
+(defn -main
+  "I don't do a whole lot ... yet."
+  [& args]
+  (println "Hello, World!"))
+
+(def order 15)
+
+;(def nippy-options {:compressor nippy/lzma2-compressor})
+(def nippy-options {:compressor nippy/lz4-compressor})
+
+(defn load-node [txn address]
+  (let [file (RandomAccessFile. ^String (:filepath (:db txn)) "r")]
+    (try
+      (.seek file address)
+      (let [size (.readLong file)
+            data (byte-array size)]
+        (.read file data)
+        (nippy/thaw data nippy-options))
+      (finally
+        (.close file)))))
+
+(defn get-node [txn address]
+  (if (nil? address)
+    {:type :leaf
+     :records (sorted-map)}
+    (or
+     (get (:new-nodes txn) address)
+     (do
+       (swap! (:cache (:db txn))
+              #(if (cache/has? % address)
+                 (cache/hit % address)
+                 (cache/miss % address (load-node txn address))))
+       (cache/lookup @(:cache (:db txn)) address)))))
+
+(defn make-node [txn type records & [old-address]]
+  (let [address (promise);(inc (:address txn))
+        node {:type type
+              :id address
+              :records (into (sorted-map) records)}]
+    (-> txn
+        (assoc :address address)
+        (update :new-nodes dissoc old-address)
+        (assoc-in [:new-nodes address] node))))
+
+(defn leaf-node? [node]
+  (= :leaf (:type node)))
+
+;;; Database & Transactions
+
+(defn get-offset [filepath]
+  (let [file (RandomAccessFile. ^String filepath "rw")]
+    (try
+      (.length file)
+      (finally
+        (.close file)))))
+
+(defn get-root-address [filepath]
+  (io/make-parents filepath)
+  (let [file (RandomAccessFile. ^String filepath "rw")]
+    (try
+      (.seek file (- (.length file) 8))
+      (.readLong file)
+      (catch Exception e
+        nil)
+      (finally
+        (.close file)))))
+
+(defonce open-databases (atom {}))
+
+(defn close-database [filepath-or-db]
+  (let [db (if (string? filepath-or-db)
+             (get @open-databases filepath-or-db)
+             filepath-or-db)]
+    (reset! (:data db) nil)
+    (reset! (:cache db) nil)
+    (swap! open-databases dissoc (:filepath db))))
+
+(defn- create-database [filepath]
+  {:filepath filepath
+   :lock-obj (Object.)
+   :cache (atom (cache/lru-cache-factory {} :threshold 512))
+   :data (atom {:root-id (get-root-address filepath)
+                :offset (get-offset filepath)})})
+(defn open-database [filepath]
+  (when (contains? @open-databases filepath)
+    (println "replacing open database at" filepath)
+    (close-database (get @open-databases filepath)))
+  (let [db (create-database filepath)]
+    (swap! open-databases assoc filepath db)
+    db))
+
+(defn list-all-databases []
+  (println (count (doall (map (fn [[filepath _]] (println filepath)) @open-databases))) "open databases"))
+
+(defn transaction [database]
+  (let [data @(:data database)
+        root-id (:root-id data)
+        txn {:db database
+             :address nil
+             :new-nodes {};(sorted-map)
+             :root-id root-id}]
+    txn))
+
+
+(defn address-node [fulfillments promise type records]
+  (let [node {:type type :records records}
+        encoded (nippy/freeze node nippy-options)
+        block-size (+ 8 (count encoded))
+        current-offset (long (+ (:file-offset fulfillments) (:data-offset fulfillments)))]
+    (deliver promise current-offset)
+    (swap! (:cache fulfillments) #(cache/miss % current-offset node))
+    (-> fulfillments
+        (assoc :last-offset current-offset);;(:data-offset fulfillments))
+        (update :data-offset + block-size)
+        (update :encoded-objects conj encoded))))
+
+(defn fulfill [fulfillments promise]
+  (let [{:keys [type records]} (get (:new-nodes fulfillments) promise)]
+    (if (= type :leaf)
+      (address-node fulfillments promise :leaf records)
+      (let [fulfillments (reduce-kv (fn [ful k p]
+                                      (if (get-in ful [:new-nodes p])
+                                        (fulfill ful p)
+                                        ful))
+                                    fulfillments records)
+            new-records (into (sorted-map)
+                              (reduce-kv (fn [rec k p]
+                                           (if (get-in fulfillments [:new-nodes p])
+                                             (conj rec [k @p])
+                                             (conj rec [k p])))
+                                         [] records))]
+        (address-node fulfillments promise :internal new-records)))))
+
+(defn update-database! [db filepath file-offset root-location data]
+  (let [file (RandomAccessFile. ^String filepath "rwd")]
+    (try
+      (doto file
+        (.seek file-offset)
+        (.write (.array ^java.nio.ByteBuffer data)))
+      (swap! (:data db) assoc :root-id root-location :offset (.length file))
+      nil
+      (finally (.close file)))))
+
+(defn commit! [tx]
+  (when (:address tx)
+    (let [filepath (get-in tx [:db :filepath])
+          file-offset (:offset @(get-in tx [:db :data]))
+          root-id (:root-id tx)
+          fulfillment (fulfill {:new-nodes (:new-nodes tx)
+                                :file-offset file-offset
+                                :data-offset 0
+                                :encoded-objects []
+                                :cache (get-in tx [:db :cache])}
+                               root-id)
+          bb (ByteBuffer/allocate (+ 8 (:data-offset fulfillment)))]
+      (doseq [ba (:encoded-objects fulfillment)]
+        (.putLong bb (long (count ba)))
+        (.put bb ^bytes ba))
+      (.putLong bb (:last-offset fulfillment))
+      ;;(pprint (dissoc fulfillment :new-nodes))
+      (update-database! (:db tx) filepath file-offset (:last-offset fulfillment) bb))))
+
+;;;;; Insertion
+
+(defn split-records [txn type records old-address]
+  (let [split-pos (int (/ (count records) 2))
+        left (take split-pos records)
+        right (drop split-pos records)
+        split-key (first (first right))
+        right (if (= type :internal)
+                (assoc-in (vec right) [0 0] nil)
+                right)
+        left-txn (make-node txn type left old-address)
+        left-address (:address left-txn)
+        right-txn (make-node left-txn type right)
+        right-address (:address right-txn)]
+    {:txn right-txn
+     :left-address left-address
+     :right-address right-address
+     :split-key split-key}))
+
+(defn insert-leaf [txn {:keys [records id]} k v]
+  (let [new-records (assoc records k v)]
+    (if (> order (count new-records))
+      (make-node txn :leaf new-records id)
+      (split-records txn :leaf new-records id))))
+
+
+(defn insert-internal [txn {:keys [records id]} k v]
+  (let [[child-key child-address] (first (rsubseq records <= k))
+        child (get-node txn child-address)
+        result (if (leaf-node? child)
+                 (insert-leaf txn child k v)
+                 (insert-internal txn child k v))
+        new-records (if-let [split-key (:split-key result)]
+                      (assoc records
+                             child-key (:left-address result)
+                             split-key (:right-address result))
+                      (assoc records child-key (:address result)))
+        new-txn (if-let [split-key (:split-key result)]
+                  (:txn result)
+                  result)]
+    (if (>= order (count new-records))
+      (make-node new-txn :internal new-records id)
+      (split-records new-txn :internal new-records id))))
+
+(defn b+insert [txn k v]
+  (let [root-id (:root-id txn)
+        root (get-node txn (:root-id txn))
+        result (if (leaf-node? root)
+                 (insert-leaf txn root k v)
+                 (insert-internal txn root k v))]
+    (let [new-txn (if-let [split-key (:split-key result)]
+                    (make-node (:txn result) :internal [[nil (:left-address result)]
+                                                        [split-key (:right-address result)]])
+                    result)]
+      (-> new-txn
+          (update :new-nodes dissoc root-id)
+          (assoc  :root-id (:address new-txn))))))
+
+;;;; GET
+
+(defn get-val [txn {:keys [records] :as node} k]
+  (cond
+    (nil? records) nil
+    (leaf-node? node) (get records k)
+    :else (recur txn (get-node txn (second (first (rsubseq records <= k)))) k)))
+
+(defn b+get [txn k]
+  (let [root (get-node txn (:root-id txn))]
+    (get-val txn root k)))
+
+
+;;;; SEEK
+
+(defn get-sub-seek [records start-key end-key rev]
+  (let [matches (subseq records <= end-key)
+        index (first (keep-indexed (fn [i [k _]] (when (and (not (nil? k)) (>= k start-key)) i)) matches))
+        sub-matches (if (and index (< 0 index))
+                      (drop (dec index) matches)
+                      matches)]
+    (if rev
+      (reverse sub-matches)
+      sub-matches)))
+
+(defn seek-vals [results txn {:keys [records] :as node} start-key end-key limit rev]
+  (if (and limit (<= limit (count results)))
+    (subvec results 0 limit)
+    (if (leaf-node? node)
+      (reduce conj results (if rev
+                             (rsubseq records >= start-key <= end-key)
+                             (subseq records >= start-key <= end-key)))
+      (reduce (fn [res [_ id]]
+                (seek-vals res txn (get-node txn id) start-key end-key limit rev))
+              results
+              (get-sub-seek records start-key end-key rev)))))
+
+(defn b+seek [txn start end & {:keys [limit reverse]}]
+  (let [root (get-node txn (:root-id txn))]
+    (seek-vals [] txn root start end limit reverse)))
+
+;;;; REMOVE
+
+(defn remove-leaf [txn {:keys [records id]} k]
+  (let [new-records (dissoc records k)]
+    (if (< (count new-records) (int (/ order 2)))
+      {:combine new-records
+       :type :leaf
+       :txn txn}
+      (make-node txn :leaf new-records id))))
+
+(defn combiner [f txn records child-address child-key child-records [sibling-key sibling-address]]
+  (let [sibling (get-node txn sibling-address)
+        type (:type sibling)
+        sibling-records (:records sibling)
+        [smaller-key larger-key smaller-records larger-records] (if (pos? (compare child-key sibling-key)) [sibling-key child-key sibling-records child-records] [child-key sibling-key child-records sibling-records])
+        cleaned-records (dissoc records larger-key)
+        larger-records (if (= type :leaf)
+                         larger-records
+                         (assoc larger-records larger-key (get larger-records nil)))
+        combined-siblings (merge larger-records smaller-records)
+        txn (-> txn
+                (update :new-nodes dissoc child-address)
+                (update :new-nodes dissoc sibling-address))]
+    (f txn cleaned-records type combined-siblings smaller-key)))
+
+(defn distribute-records [txn cleaned-records type combined-siblings smaller-key]
+  (let [{:keys [left-address right-address split-key txn]} (split-records txn type combined-siblings nil)]
+    {:txn txn
+     :records (assoc cleaned-records smaller-key left-address split-key right-address)}))
+
+(defn merge-records [txn cleaned-records type combined-siblings smaller-key]
+  (let [new-txn (make-node txn type combined-siblings)]
+    {:txn new-txn
+     :records (assoc cleaned-records smaller-key (:address new-txn))}))
+
+(defn combine-records [txn records child-address child-key child-records]
+  (let [rv (vec records)
+        focal-index (first (keep-indexed #(when (= (first %2) child-key) %1) rv))
+        left (if (< 0 focal-index) (nth rv (dec focal-index)))
+        right (if (< focal-index (dec (count rv))) (nth rv (inc focal-index)))
+        left-count (if left (count (:records (get-node txn (second left)))) 0)
+        right-count (if right (count (:records (get-node txn (second right)))) 0)
+        min-count (int (/ order 2))]
+    (cond
+      (> right-count min-count) (combiner distribute-records txn records child-address child-key child-records right)
+      (> left-count min-count) (combiner distribute-records txn records child-address child-key child-records left)
+      (= right-count min-count) (combiner merge-records txn records child-address child-key child-records right)
+      (= left-count min-count) (combiner merge-records txn records child-address child-key child-records left))))
+
+(defn remove-internal [txn {:keys [records id]} k]
+  (let [[child-key child-address] (first (rsubseq records <= k))
+        child (get-node txn child-address)
+        result (if (leaf-node? child)
+                 (remove-leaf txn child k)
+                 (remove-internal txn child k))
+        new-records (if-let [child-records (:combine result)]
+                      (combine-records (:txn result) records child-address child-key child-records)
+                      (assoc records child-key (:address result)))
+        new-txn (if (:combine result)
+                  (:txn new-records)
+                  result)
+        new-records (if (:combine result)
+                      (:records new-records)
+                      new-records)]
+    (if (< (count new-records) (int (/ order 2)))
+      {:combine new-records
+       :type (:type child)
+       :origin :internal
+       :txn new-txn}
+      (make-node new-txn :internal new-records id))))
+
+(defn b+remove [txn k]
+  (let [root-id (:root-id txn)
+        root (get-node txn (:root-id txn))
+        result (if (leaf-node? root)
+                 (remove-leaf txn root k)
+                 (remove-internal txn root k))]
+    (let [final-tx (cond
+                     (and (not (= :leaf (:type result))) (:combine result) (= 1 (count (:combine result))))
+                     (do (println "case 1" (:address (:txn result)))
+                         (assoc (:txn result) :address (-> result :combine first second)))
+
+                     (and (= :internal (:origin result)) (= :leaf (:type result)) (:combine result))
+                     (let [combined (reduce concat (map (fn [[k v]] (vec (:records (get-node (:txn result) v)))) (:combine result)))]
+                       (make-node (:txn result) :leaf combined (:address (:txn result))))
+
+                     (and (= :internal (:origin result)) (:combine result))
+                     (make-node (:txn result) :internal (:combine result) (:address (:txn result)))
+
+                     (:combine result)
+                     (make-node (:txn result) (:type result) (:combine result) (:address (:txn result)))
+
+                     :else result)]
+      (-> final-tx
+          (update :new-nodes dissoc root-id)
+          (assoc :root-id (:address final-tx))))))
+
+;;;; Transaction Macros
+
+(defmacro with-write-transaction [[database tx-symbol] & body]
+  `(locking (:lock-obj ~database)
+     (let [~tx-symbol (transaction ~database)]
+       (commit! (do ~@body)))))
+
+(defmacro with-read-transaction [[database tx-symbol] & body]
+  `(let [~tx-symbol (transaction ~database)]
+     ~@body))
+
+
+;;;;; Compaction
+
+(defn naive-subset-compaction [origin-filepath compaction-filepath start-key end-key]
+  (let [origin-db (open-database origin-filepath)
+        compact-db (open-database compaction-filepath)
+        data (with-read-transaction [origin-db tx]
+               (b+seek tx start-key end-key))]
+    (with-write-transaction [compact-db tx]
+      (reduce-kv (fn [tx k v] (b+insert tx k v)) tx data))))
