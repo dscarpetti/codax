@@ -23,7 +23,7 @@
   Nested `nil` values are not stored.
 
   The values will be changed in the datastore when the transaction is committed
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
@@ -37,7 +37,7 @@
   Nested `nil` values are not stored.
 
   The values will be changed in the datastore when the transaction is committed
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
@@ -48,7 +48,7 @@
   "Deletes all values at the supplied path.
 
   The value will be deleted from the datastore when the transaction is committed, (which
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   Equivalent to calling `assoc-at` with a `val-or-map` of `nil`.
 
@@ -158,7 +158,7 @@
 ;; Put operations
 
 (defn put
-  "Puts a value, or map of values, at the supplid path.
+  "Puts a value, or map of values, at the supplied path.
 
   If the value is `nil`, or is a map with `nil` values, the value(s) at the respective
   locations will be deleted. Missing values will not.
@@ -167,7 +167,7 @@
   path, overwriting any existing value.
 
   The values will be changed in the datastore when the transaction is committed
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
@@ -188,7 +188,7 @@
   no effect.
 
   The values will be changed in the datastore when the transaction is committed
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
@@ -217,7 +217,7 @@
   calling `delete-val`
 
   The value will be set in the datastore when the transaction is committed, (which
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not).
@@ -232,7 +232,7 @@
 (defn update-val
   "Runs the supplied function current value at `path`, and set the `path` to the result.
   The value will be set in the datastore when the transaction is committed, (which
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not).
@@ -247,7 +247,7 @@
   "Clears the non-map value at `path`.
 
   The value will be deleted from the datastore when the transaction is committed, (which
-  will occur after the `body` of a `with-write-transaction` form).
+  (occurs  after the `body` of a `with-write-transaction` form).
 
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not).
