@@ -107,7 +107,7 @@
   (let [values (seek tx path path :no-decode true)]
     {:original (complete-collection tx path
                                     (reduce reduce-assoc {} (map #(pathwise/decode (first %)) values)))
-     :tx (reduce (fn [t [raw-key _]] (store/b+remove tx raw-key)) values)}))
+     :tx (reduce (fn [t [raw-key _]] (store/b+remove tx raw-key)) tx values)}))
 
 (defn update-map [tx path f & args]
   (let [{:keys [tx original]} (collect-delete tx path)
