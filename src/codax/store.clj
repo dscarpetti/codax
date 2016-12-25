@@ -256,7 +256,9 @@
 
 (defn get-sub-seek [records start-key end-key rev]
   (let [matches (subseq records <= end-key)
-        index (first (keep-indexed (fn [i [k _]] (when (and (not (nil? k)) (>= k start-key)) i)) matches))
+        index (first (keep-indexed (fn [i [k _]]
+                                     (when (and (not (nil? k)) (>= (compare k start-key) 0)) i))
+                                   matches))
         sub-matches (if (and index (< 0 index))
                       (drop (dec index) matches)
                       matches)]
