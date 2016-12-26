@@ -14,7 +14,10 @@
   (store/b+insert tx (pathwise/encode path) v))
 
 (defn update-val [tx path f & args]
-  (put-val tx path (apply f (get-val tx path) args)))
+  (let [k (pathwise/encode path)
+        old-val (store/b+get tx k)
+        new-val (apply f old-val args)]
+    (store/b+insert tx k new-val)))
 
 (defn seek
   ([tx] (seek tx nil nil))
