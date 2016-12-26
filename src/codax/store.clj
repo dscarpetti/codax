@@ -359,8 +359,7 @@
                  (remove-internal txn root k))]
     (let [final-tx (cond
                      (and (not (= :leaf (:type result))) (:combine result) (= 1 (count (:combine result))))
-                     (do (println "case 1" (:address (:txn result)))
-                         (assoc (:txn result) :address (-> result :combine first second)))
+                     (assoc (:txn result) :address (-> result :combine first second))
 
                      (and (= :internal (:origin result)) (= :leaf (:type result)) (:combine result))
                      (let [combined (reduce concat (map (fn [[k v]] (vec (:records (get-node (:txn result) v)))) (:combine result)))]
