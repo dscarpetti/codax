@@ -367,7 +367,7 @@
                        (make-node (:txn result) :leaf combined (:address (:txn result))))
 
                      (and (= :internal (:origin result)) (:combine result))
-                     (make-node (:txn result) :internal (:combine result) (:address (:txn result)))
+                     (make-node (:txn result) :internal (:combine result))
 
                      (:combine result)
                      (make-node (:txn result) (:type result) (:combine result) (:address (:txn result)))
