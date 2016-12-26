@@ -17,7 +17,6 @@
 
 (def order 15)
 
-;(def nippy-options {:compressor nippy/lzma2-compressor})
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 (defn load-node [txn address]
