@@ -7,7 +7,9 @@
    [taoensso.nippy :as nippy])
   (:import
    [java.io RandomAccessFile FileOutputStream DataOutputStream]
-   [java.nio ByteBuffer])
+   [java.nio ByteBuffer]
+   [java.nio.file Files StandardCopyOption Paths])
+
   (:gen-class))
 
 (defn -main
@@ -421,13 +423,7 @@
     (with-write-transaction [compact-db tx]
       (reduce (fn [tx [k v]] (b+insert tx k v)) tx data))))
 
-
-
-
-;;;;;
-
-
-(defn clone-leaf-node [origin-file compact-file address]
+(defn- clone-leaf-node [origin-file compact-file address]
   (.seek origin-file address)
   (let [size (.readLong origin-file)
         data (byte-array size)
@@ -438,14 +434,14 @@
     (.write compact-file data)
     address))
 
-(defn load-records-for-compaction [origin-file address]
+(defn- load-records-for-compaction [origin-file address]
   (.seek origin-file address)
   (let [size (.readLong origin-file)
         data (byte-array size)]
     (.read origin-file data)
     (:records (nippy/thaw data nippy-options))))
 
-(defn write-compacted-records [compact-file records]
+(defn- write-compacted-records [compact-file records]
   (let [address (.size compact-file)
         ;;address (.getFilePointer compact-file)
         encoded-node (nippy/freeze {:type :internal :records records} nippy-options)
@@ -454,7 +450,7 @@
     (.write compact-file encoded-node)
     address))
 
-(defn compaction-step [origin-file compact-file current-address depth]
+(defn- compaction-step [origin-file compact-file current-address depth]
   (let [current-records (load-records-for-compaction origin-file current-address)]
     (cond
       (= depth 1) (clone-leaf-node origin-file compact-file current-address)
@@ -481,18 +477,38 @@
     (try
       (let [root-address (compaction-step origin-file compact-file root-address depth)]
         (.writeLong compact-file root-address)
-        (.flush compact-file))
+        (.flush compact-file)
+        {:root-id root-address
+         :offset (.size compact-file)})
       (finally
         (do
           (.close origin-file)
           (.close compact-file))))))
 
 
+(defn move-file-atomically [from to]
+  (Files/move
+   (Paths/get from (make-array String 0))
+   (Paths/get to (make-array String 0))
+   (into-array [StandardCopyOption/ATOMIC_MOVE])))
+
+(defn compact-database [db]
+  (locking (:lock-obj db)
+    (let [origin-path (:filepath db)
+          temp-path (str origin-path "_TEMP_COMPACTION_FILE")
+          archive-path (str origin-path "_archive_" (System/currentTimeMillis))
+          db-data (perform-compaction (:filepath db) temp-path)]
+      (println "foo" db-data)
+      (move-file-atomically origin-path archive-path)
+      (move-file-atomically temp-path origin-path)
+      (reset! (:data db) db-data)
+      (reset! (:cache db) (create-cache)))))
+
 (defn compare-dbs [a-path b-path]
   (let [a (open-database a-path)
         b (open-database b-path)
         a-vals (with-read-transaction [a t] (b+seek t (str (char 0x00)) (str (char 0xff))))
         b-vals (with-read-transaction [b t] (b+seek t (str (char 0x00)) (str (char 0xff))))]
-;;    (pprint a-vals)
-;;    (pprint b-vals)
+    ;;    (pprint a-vals)
+    ;;    (pprint b-vals)
     (= a-vals b-vals)))
