@@ -38,13 +38,16 @@
      :records (sorted-map)}
     (or
      (get (:new-nodes txn) address)
-     (if (cache/has? @(:cache (:db txn)) address)
-       (let [updated-cache (swap! (:cache (:db txn)) #(cache/hit % address))]
-         (cache/lookup updated-cache address))
-       (if-let [found-node (load-node txn address)]
-         (do (swap! (:cache (:db txn)) #(cache/miss % address found-node))
+     (let [current-cache (:cache @(:data (:db txn)))]
+       (if (cache/has? current-cache address)
+         (do
+           (swap! (:data (:db txn)) assoc :cache (cache/hit current-cache address))
+           (cache/lookup current-cache address))
+         (if-let [found-node (load-node txn address)]
+           (do
+             (swap! (:data (:db txn)) assoc :cache (cache/miss current-cache address found-node))
              found-node)
-         (throw (Exception. (str "node not found: " address))))))))
+         (throw (Exception. (str "node not found: " address)))))))))
 
 (defn make-node [txn type records & [old-address]]
   (let [address (promise);(inc (:address txn))
