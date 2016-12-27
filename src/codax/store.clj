@@ -90,7 +90,6 @@
              filepath-or-db)]
     (when db
       (reset! (:data db) nil)
-      (reset! (:cache db) nil)
       (swap! open-databases dissoc (:filepath db)))))
 
 (defn destroy-database [filepath-or-db]
@@ -107,8 +106,8 @@
 (defn- create-database [filepath]
   {:filepath filepath
    :lock-obj (Object.)
-   :cache (atom (create-cache))
-   :data (atom {:root-id (get-root-address filepath)
+   :data (atom {:cache (create-cache)
+                :root-id (get-root-address filepath)
                 :offset (get-offset filepath)})})
 
 (defn open-database [filepath]
@@ -138,7 +137,7 @@
         block-size (+ 8 (count encoded))
         current-offset (long (+ (:file-offset fulfillments) (:data-offset fulfillments)))]
     (deliver promise current-offset)
-    (swap! (:cache fulfillments) #(cache/miss % current-offset node))
+    (swap! (:db-data fulfillments) update :cache #(cache/miss % current-offset node))
     (-> fulfillments
         (assoc :last-offset current-offset);;(:data-offset fulfillments))
         (update :data-offset + block-size)
@@ -180,7 +179,7 @@
                                 :file-offset file-offset
                                 :data-offset 0
                                 :encoded-objects []
-                                :cache (get-in tx [:db :cache])}
+                                :db-data (get-in tx [:db :data])}
                                root-id)
           bb (ByteBuffer/allocate (+ 8 (:data-offset fulfillment)))]
       (doseq [ba (:encoded-objects fulfillment)]
@@ -501,13 +500,12 @@
   (locking (:lock-obj db)
     (let [origin-path (:filepath db)
           temp-path (str origin-path "_TEMP_COMPACTION_FILE")
-          archive-path (str origin-path "_archive_" (System/currentTimeMillis))
+          archive-path (str origin-path "_archive_" (System/currentTimeMillis) "_" (int (rand 100000)))
           db-data (perform-compaction (:filepath db) temp-path)]
       (println "foo" db-data)
       (move-file-atomically origin-path archive-path)
       (move-file-atomically temp-path origin-path)
-      (reset! (:data db) db-data)
-      (reset! (:cache db) (create-cache)))))
+      (reset! (:data db) (assoc db-data :cache (create-cache))))))
 
 (defn compare-dbs [a-path b-path]
   (let [a (open-database a-path)
