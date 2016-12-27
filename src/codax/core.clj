@@ -265,9 +265,10 @@
   This transaction object can be passed to any of the transaction functions.
   The `body` must evaluate to this object so it can be committed."
   [[database tx-symbol & {:keys [prefix]}] & body]
-  `(locking (:lock-obj ~database)
-     (let [~tx-symbol (set-prefix (store/transaction ~database) ~prefix)]
-       (store/commit! (do ~@body)))))
+  `(let [db# ~database]
+     (locking (:lock-obj db#)
+       (let [~tx-symbol (set-prefix (store/transaction db#) ~prefix)]
+         (store/commit! (do ~@body))))))
 
 (defmacro with-read-transaction
   "Creates a read transaction object and assigns it to `tx-symbol`.
@@ -275,5 +276,6 @@
   Behavior when passed to a modifying transaction function is undefined.
   The final value will be the result of evaluating the `body`."
   [[database tx-symbol & {:keys [prefix]}] & body]
-  `(let [~tx-symbol (set-prefix (store/transaction ~database) ~prefix)]
-       ~@body))
+  `(let [db# ~database
+         ~tx-symbol (set-prefix (store/transaction db#) ~prefix)]
+       (store/with-read-lock [db#] ~@body)))

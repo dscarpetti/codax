@@ -8,7 +8,8 @@
   (:import
    [java.io RandomAccessFile FileOutputStream DataOutputStream]
    [java.nio ByteBuffer]
-   [java.nio.file Files StandardCopyOption Paths])
+   [java.nio.file Files StandardCopyOption Paths]
+   [java.util.concurrent.locks ReentrantReadWriteLock])
 
   (:gen-class))
 
@@ -103,18 +104,20 @@
 (defn- create-cache []
   (cache/lru-cache-factory {} :threshold 512))
 
-(defn- create-database [filepath]
+(defn- create-database [filepath compaction-threshold]
   {:filepath filepath
    :lock-obj (Object.)
+   :compaction-lock (ReentrantReadWriteLock. true)
+   :compaction-threshold compaction-threshold
    :data (atom {:cache (create-cache)
                 :root-id (get-root-address filepath)
                 :offset (get-offset filepath)})})
 
-(defn open-database [filepath]
+(defn open-database [filepath & {:keys [compaction-threshold] :or {compaction-threshold 1000}}]
   (when (contains? @open-databases filepath)
     (println "replacing open database at" filepath)
     (close-database (get @open-databases filepath)))
-  (let [db (create-database filepath)]
+  (let [db (create-database filepath compaction-threshold)]
     (swap! open-databases assoc filepath db)
     db))
 
@@ -166,14 +169,22 @@
       (doto file
         (.seek file-offset)
         (.write (.array ^java.nio.ByteBuffer data)))
-      (swap! (:data db) assoc :root-id root-location :offset (.length file))
+      (swap! (:data db) #(assoc %
+                          :root-id root-location
+                          :offset (.length file)
+                          :write-counter (if-let [count (:write-counter %)]
+                                           (inc count)
+                                           1)))
       nil
       (finally (.close file)))))
+
+(declare compact-database)
 
 (defn commit! [tx]
   (when (:address tx)
     (let [filepath (get-in tx [:db :filepath])
-          file-offset (:offset @(get-in tx [:db :data]))
+          db-data @(get-in tx [:db :data])
+          file-offset (:offset db-data)
           root-id (:root-id tx)
           fulfillment (fulfill {:new-nodes (:new-nodes tx)
                                 :file-offset file-offset
@@ -186,8 +197,11 @@
         (.putLong bb (long (count ba)))
         (.put bb ^bytes ba))
       (.putLong bb (:last-offset fulfillment))
-      ;;(pprint (dissoc fulfillment :new-nodes))
-      (update-database! (:db tx) filepath file-offset (:last-offset fulfillment) bb))))
+      (update-database! (:db tx) filepath file-offset (:last-offset fulfillment) bb)
+      (when (and (:write-counter db-data)
+                 (:compaction-threshold (:db tx))
+                 (>= (:write-counter db-data) (:compaction-threshold (:db tx))))
+        (compact-database (:db tx))))))
 
 ;;;;; Insertion
 
@@ -388,15 +402,30 @@
           (assoc :root-id (:address final-tx))))))
 
 ;;;; Transaction Macros
+(defmacro with-read-lock [[database] & body]
+  `(let [lock# (:compaction-lock ~database)]
+     (.lock (.readLock lock#))
+     (try
+       (do ~@body)
+       (finally (.unlock (.readLock lock#))))))
+
+(defmacro with-write-lock [[database] & body]
+  `(let [lock# (:compaction-lock ~database)]
+     (.lock (.writeLock lock#))
+     (try
+       (do ~@body)
+       (finally (.unlock (.writeLock lock#))))))
 
 (defmacro with-write-transaction [[database tx-symbol] & body]
-  `(locking (:lock-obj ~database)
-     (let [~tx-symbol (transaction ~database)]
-       (commit! (do ~@body)))))
+  `(let [db# ~database]
+     (locking (:lock-obj db#)
+       (let [~tx-symbol (transaction db#)]
+         (commit! (do ~@body))))))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
-  `(let [~tx-symbol (transaction ~database)]
-     ~@body))
+  `(let [db# ~database
+         ~tx-symbol (transaction db#)]
+     (with-read-lock [db#] ~@body)))
 
 
 ;;;;; Compaction
@@ -500,7 +529,7 @@
           archive-path (str origin-path "_archive_" (System/currentTimeMillis) "_" (int (rand 100000)))
           db-data (perform-compaction (:filepath db) temp-path)]
       ;;(move-file-atomically origin-path archive-path)
-      (move-file-atomically temp-path origin-path)
+      (with-write-lock [db] (move-file-atomically temp-path origin-path))
       (reset! (:data db) (assoc db-data :cache (create-cache))))))
 
 (defn compare-dbs [a-path b-path]
