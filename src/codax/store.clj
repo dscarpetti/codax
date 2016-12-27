@@ -427,28 +427,26 @@
       (finally
         (.close file)))))
 
-(defn- clone-leaf-node [origin-file compact-file address]
+(defn- clone-leaf-node [^RandomAccessFile origin-file ^DataOutputStream compact-file address]
   (.seek origin-file address)
   (let [size (.readLong origin-file)
         data (byte-array size)
-        ;;address (.getFilePointer compact-file)]
         address (.size compact-file)]
     (.read origin-file data)
     (.writeLong compact-file size)
     (.write compact-file data)
     address))
 
-(defn- load-records-for-compaction [origin-file address]
+(defn- load-records-for-compaction [^RandomAccessFile origin-file address]
   (.seek origin-file address)
   (let [size (.readLong origin-file)
         data (byte-array size)]
     (.read origin-file data)
     (:records (nippy/thaw data nippy-options))))
 
-(defn- write-compacted-records [compact-file records]
+(defn- write-compacted-records [^DataOutputStream compact-file records]
   (let [address (.size compact-file)
-        ;;address (.getFilePointer compact-file)
-        encoded-node (nippy/freeze {:type :internal :records records} nippy-options)
+        ^bytes encoded-node (nippy/freeze {:type :internal :records records} nippy-options)
         size (long (count encoded-node))]
     (.writeLong compact-file size)
     (.write compact-file encoded-node)
@@ -475,7 +473,6 @@
   (let [root-address (get-root-address origin-path)
         depth (determine-tree-depth origin-path root-address)
         origin-file (RandomAccessFile. ^String origin-path "r")
-        ;;compact-file (RandomAccessFile. ^String compaction-path"rw")]
         compact-file (DataOutputStream. (FileOutputStream. ^String compaction-path))]
     (io/delete-file compaction-path true)
     (try
