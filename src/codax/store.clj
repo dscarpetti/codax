@@ -21,24 +21,6 @@
 
 (def nippy-options {:compressor nippy/lz4-compressor})
 
-(defn determine-tree-depth [filepath & [start-address]]
-  (let [file (RandomAccessFile. ^String filepath "r")
-        read-node (fn [address]
-                    (.seek file address)
-                    (let [size (.readLong file)
-                          data (byte-array size)]
-                      (.read file data)
-                      (nippy/thaw data nippy-options)))]
-    (try
-      (loop [address (or start-address (get-root-address filepath))
-             depth 0]
-        (let [node (read-node address)]
-          (if (leaf-node? node)
-            (inc depth)
-            (recur (second (first (:records node))) (inc depth)))))
-      (finally
-        (.close file)))))
-
 (defn load-node [txn address]
   (let [file (RandomAccessFile. ^String (:filepath (:db txn)) "r")]
     (try
@@ -425,6 +407,24 @@
     (with-write-transaction [compact-db tx]
       (reduce (fn [tx [k v]] (b+insert tx k v)) tx data))))
 
+(defn determine-tree-depth [filepath & [start-address]]
+  (let [file (RandomAccessFile. ^String filepath "r")
+        read-node (fn [address]
+                    (.seek file address)
+                    (let [size (.readLong file)
+                          data (byte-array size)]
+                      (.read file data)
+                      (nippy/thaw data nippy-options)))]
+    (try
+      (loop [address (or start-address (get-root-address filepath))
+             depth 0]
+        (let [node (read-node address)]
+          (if (leaf-node? node)
+            (inc depth)
+            (recur (second (first (:records node))) (inc depth)))))
+      (finally
+        (.close file)))))
+
 (defn- clone-leaf-node [origin-file compact-file address]
   (.seek origin-file address)
   (let [size (.readLong origin-file)
@@ -466,7 +466,7 @@
       (write-compacted-records
        compact-file
        (reduce-kv (fn [new-records k address]
-                    (assoc new-records k (compaction origin-file compact-file address (dec depth))))
+                    (assoc new-records k (compaction-step origin-file compact-file address (dec depth))))
                   (sorted-map) current-records)))))
 
 (defn perform-compaction [origin-path compaction-path]
