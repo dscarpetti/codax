@@ -17,7 +17,7 @@
   [& args]
   (println "Hello, World!"))
 
-(def order 15)
+(def order 40)
 
 (def nippy-options {:compressor nippy/lz4-compressor})
 
