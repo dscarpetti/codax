@@ -112,12 +112,16 @@
     (when filepath
       (io/delete-file filepath))))
 
+(defn- create-cache []
+  (cache/lru-cache-factory {} :threshold 512))
+
 (defn- create-database [filepath]
   {:filepath filepath
    :lock-obj (Object.)
-   :cache (atom (cache/lru-cache-factory {} :threshold 512))
+   :cache (atom (create-cache))
    :data (atom {:root-id (get-root-address filepath)
                 :offset (get-offset filepath)})})
+
 (defn open-database [filepath]
   (when (contains? @open-databases filepath)
     (println "replacing open database at" filepath)
