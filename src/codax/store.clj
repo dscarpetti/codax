@@ -509,6 +509,22 @@
         b (open-database b-path)
         a-vals (with-read-transaction [a t] (b+seek t (str (char 0x00)) (str (char 0xff))))
         b-vals (with-read-transaction [b t] (b+seek t (str (char 0x00)) (str (char 0xff))))]
-    ;;    (pprint a-vals)
-    ;;    (pprint b-vals)
     (= a-vals b-vals)))
+
+(defn stress-database []
+  (let [db (open-database "data/crash-test-dummy")
+        inc-count #(if (number? %)
+                     (inc %)
+                     1)
+        writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 1000)))
+        updates (repeat 1000 #(with-write-transaction [db tx] (b+insert tx "counter" (inc-count (b+get tx "counter")))))
+        reads (repeat 500 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
+        compacts (repeat 50 #(compact-database db))
+        ops (shuffle (concat writes reads compacts updates))]
+    (try
+      (doall (pmap #(%) ops))
+      (let [result (with-read-transaction [db tx]
+                     (b+seek tx (str (char 0x00)) (str (char 0xff))))]
+        (println (count result))
+        (println (last result)))
+      (finally (close-database db)))))
