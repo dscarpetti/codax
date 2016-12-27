@@ -19,6 +19,24 @@
 
 (def nippy-options {:compressor nippy/lz4-compressor})
 
+(defn determine-tree-depth [filepath & [start-address]]
+  (let [file (RandomAccessFile. ^String filepath "r")
+        read-node (fn [address]
+                    (.seek file address)
+                    (let [size (.readLong file)
+                          data (byte-array size)]
+                      (.read file data)
+                      (nippy/thaw data nippy-options)))]
+    (try
+      (loop [address (or start-address (get-root-address filepath))
+             depth 0]
+        (let [node (read-node address)]
+          (if (leaf-node? node)
+            (inc depth)
+            (recur (second (first (:records node))) (inc depth)))))
+      (finally
+        (.close file)))))
+
 (defn load-node [txn address]
   (let [file (RandomAccessFile. ^String (:filepath (:db txn)) "r")]
     (try
@@ -399,27 +417,7 @@
     (with-write-transaction [compact-db tx]
       (reduce (fn [tx [k v]] (b+insert tx k v)) tx data))))
 
-;;;; Util
 
-(defn read-raw-node [filepath address]
-  (let [file (RandomAccessFile. ^String filepath "r")]
-    (try
-      (.seek file address)
-      (let [size (.readLong file)
-            data (byte-array size)]
-        (.read file data)
-        data)
-      (finally
-        (.close file)))))
-
-(defn determine-depth [filepath & [start-address]]
-  (loop [address (or start-address (get-root-address filepath))
-         depth 0]
-    ;;(println depth address)
-    (let [node (nippy/thaw (read-raw-node filepath address) nippy-options)]
-      (if (leaf-node? node)
-        (inc depth)
-        (recur (second (first (:records node))) (inc depth))))))
 
 
 ;;;;;
@@ -429,12 +427,11 @@
   (.seek origin-file address)
   (let [size (.readLong origin-file)
         data (byte-array size)
+        ;;address (.getFilePointer compact-file)]
         address (.size compact-file)]
-;;        address (.getFilePointer compact-file)]
     (.read origin-file data)
     (.writeLong compact-file size)
     (.write compact-file data)
-;;    (println "clone size" size "address" address)
     address))
 
 (defn load-records-for-compaction [origin-file address]
@@ -445,16 +442,15 @@
     (:records (nippy/thaw data nippy-options))))
 
 (defn write-compacted-records [compact-file records]
-  (let [;;address (.getFilePointer compact-file)
-        address (.size compact-file)
+  (let [address (.size compact-file)
+        ;;address (.getFilePointer compact-file)
         encoded-node (nippy/freeze {:type :internal :records records} nippy-options)
         size (long (count encoded-node))]
     (.writeLong compact-file size)
     (.write compact-file encoded-node)
-;;    (println "internal" "size" size "address" address)
     address))
 
-(defn compaction [origin-file compact-file current-address depth]
+(defn compaction-step [origin-file compact-file current-address depth]
   (let [current-records (load-records-for-compaction origin-file current-address)]
     (cond
       (= depth 1) (clone-leaf-node origin-file compact-file current-address)
@@ -471,21 +467,22 @@
                     (assoc new-records k (compaction origin-file compact-file address (dec depth))))
                   (sorted-map) current-records)))))
 
-
-(defn b+compact [origin-path compaction-path]
+(defn perform-compaction [origin-path compaction-path]
   (let [root-address (get-root-address origin-path)
-        depth (determine-depth origin-path root-address)
+        depth (determine-tree-depth origin-path root-address)
         origin-file (RandomAccessFile. ^String origin-path "r")
+        ;;compact-file (RandomAccessFile. ^String compaction-path"rw")]
         compact-file (DataOutputStream. (FileOutputStream. ^String compaction-path))]
-;;        compact-file (RandomAccessFile. ^String compaction-path"rw")]
     (io/delete-file compaction-path true)
     (try
-      (let [root-address (compaction origin-file compact-file root-address depth)]
-        (.writeLong compact-file root-address))
+      (let [root-address (compaction-step origin-file compact-file root-address depth)]
+        (.writeLong compact-file root-address)
+        (.flush compact-file))
       (finally
         (do
           (.close origin-file)
           (.close compact-file))))))
+
 
 (defn compare-dbs [a-path b-path]
   (let [a (open-database a-path)
