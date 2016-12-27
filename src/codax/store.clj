@@ -6,7 +6,7 @@
    [clojure.string :as str]
    [taoensso.nippy :as nippy])
   (:import
-   [java.io RandomAccessFile]
+   [java.io RandomAccessFile FileOutputStream DataOutputStream]
    [java.nio ByteBuffer])
   (:gen-class))
 
@@ -255,6 +255,7 @@
 (defn get-sub-seek [records start-key end-key rev]
   (let [matches (subseq records <= end-key)
         index (first (keep-indexed (fn [i [k _]]
+                                     ;(println (type k) (type start-key))
                                      (when (and (not (nil? k)) (>= (compare k start-key) 0)) i))
                                    matches))
         sub-matches (if (and index (< 0 index))
@@ -396,4 +397,101 @@
         data (with-read-transaction [origin-db tx]
                (b+seek tx start-key end-key))]
     (with-write-transaction [compact-db tx]
-      (reduce-kv (fn [tx k v] (b+insert tx k v)) tx data))))
+      (reduce (fn [tx [k v]] (b+insert tx k v)) tx data))))
+
+;;;; Util
+
+(defn read-raw-node [filepath address]
+  (let [file (RandomAccessFile. ^String filepath "r")]
+    (try
+      (.seek file address)
+      (let [size (.readLong file)
+            data (byte-array size)]
+        (.read file data)
+        data)
+      (finally
+        (.close file)))))
+
+(defn determine-depth [filepath & [start-address]]
+  (loop [address (or start-address (get-root-address filepath))
+         depth 0]
+    ;;(println depth address)
+    (let [node (nippy/thaw (read-raw-node filepath address) nippy-options)]
+      (if (leaf-node? node)
+        (inc depth)
+        (recur (second (first (:records node))) (inc depth))))))
+
+
+;;;;;
+
+
+(defn clone-leaf-node [origin-file compact-file address]
+  (.seek origin-file address)
+  (let [size (.readLong origin-file)
+        data (byte-array size)
+        address (.size compact-file)]
+;;        address (.getFilePointer compact-file)]
+    (.read origin-file data)
+    (.writeLong compact-file size)
+    (.write compact-file data)
+;;    (println "clone size" size "address" address)
+    address))
+
+(defn load-records-for-compaction [origin-file address]
+  (.seek origin-file address)
+  (let [size (.readLong origin-file)
+        data (byte-array size)]
+    (.read origin-file data)
+    (:records (nippy/thaw data nippy-options))))
+
+(defn write-compacted-records [compact-file records]
+  (let [;;address (.getFilePointer compact-file)
+        address (.size compact-file)
+        encoded-node (nippy/freeze {:type :internal :records records} nippy-options)
+        size (long (count encoded-node))]
+    (.writeLong compact-file size)
+    (.write compact-file encoded-node)
+;;    (println "internal" "size" size "address" address)
+    address))
+
+(defn compaction [origin-file compact-file current-address depth]
+  (let [current-records (load-records-for-compaction origin-file current-address)]
+    (cond
+      (= depth 1) (clone-leaf-node origin-file compact-file current-address)
+      (= depth 2)
+      (write-compacted-records
+       compact-file
+       (reduce-kv (fn [new-records k address]
+                    (assoc new-records k (clone-leaf-node origin-file compact-file address)))
+                  (sorted-map) current-records))
+      :else
+      (write-compacted-records
+       compact-file
+       (reduce-kv (fn [new-records k address]
+                    (assoc new-records k (compaction origin-file compact-file address (dec depth))))
+                  (sorted-map) current-records)))))
+
+
+(defn b+compact [origin-path compaction-path]
+  (let [root-address (get-root-address origin-path)
+        depth (determine-depth origin-path root-address)
+        origin-file (RandomAccessFile. ^String origin-path "r")
+        compact-file (DataOutputStream. (FileOutputStream. ^String compaction-path))]
+;;        compact-file (RandomAccessFile. ^String compaction-path"rw")]
+    (io/delete-file compaction-path true)
+    (try
+      (let [root-address (compaction origin-file compact-file root-address depth)]
+        (.writeLong compact-file root-address))
+      (finally
+        (do
+          (.close origin-file)
+          (.close compact-file))))))
+
+(defn compare-dbs [a-path b-path]
+  (let [a (open-database a-path)
+        b (open-database b-path)
+        a-vals (with-read-transaction [a t] (b+seek t (str (char 0x00)) (str (char 0xff))))
+        b-vals (with-read-transaction [b t] (b+seek t (str (char 0x00)) (str (char 0xff))))]
+;;    (pprint a-vals)
+;;    (pprint b-vals)
+    (= a-vals b-vals)))
