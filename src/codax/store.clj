@@ -499,8 +499,7 @@
           temp-path (str origin-path "_TEMP_COMPACTION_FILE")
           archive-path (str origin-path "_archive_" (System/currentTimeMillis) "_" (int (rand 100000)))
           db-data (perform-compaction (:filepath db) temp-path)]
-      (println "foo" db-data)
-      (move-file-atomically origin-path archive-path)
+      ;;(move-file-atomically origin-path archive-path)
       (move-file-atomically temp-path origin-path)
       (reset! (:data db) (assoc db-data :cache (create-cache))))))
 
