@@ -529,8 +529,9 @@
           archive-path (str origin-path "_archive_" (System/currentTimeMillis) "_" (int (rand 100000)))
           db-data (perform-compaction (:filepath db) temp-path)]
       ;;(move-file-atomically origin-path archive-path)
-      (with-write-lock [db] (move-file-atomically temp-path origin-path))
-      (reset! (:data db) (assoc db-data :cache (create-cache))))))
+      (with-write-lock [db]
+        (move-file-atomically temp-path origin-path)
+        (reset! (:data db) (assoc db-data :cache (create-cache)))))))
 
 (defn compare-dbs [a-path b-path]
   (let [a (open-database a-path)
