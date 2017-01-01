@@ -90,8 +90,9 @@
              (get @open-databases filepath-or-db)
              filepath-or-db)]
     (when db
-      (reset! (:data db) nil)
-      (swap! open-databases dissoc (:filepath db)))))
+      (locking (:lock-obj db)
+        (reset! (:data db) nil)
+        (swap! open-databases dissoc (:filepath db))))))
 
 (defn destroy-database [filepath-or-db]
   (close-database filepath-or-db)
