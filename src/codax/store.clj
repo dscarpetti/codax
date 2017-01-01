@@ -545,11 +545,12 @@
         inc-count #(if (number? %)
                      (inc %)
                      1)
-        writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 1000)))
-        updates (repeat 1000 #(with-write-transaction [db tx] (b+insert tx "counter" (inc-count (b+get tx "counter")))))
-        reads (repeat 500 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
+        writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 10000)))
+        updates (repeat 10000 #(with-write-transaction [db tx] (b+insert tx "counter" (inc-count (b+get tx "counter")))))
+        reads (repeat 10000 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
+        seeks (repeat 1000 #(with-read-transaction [db tx] (b+seek tx "0" "z")))
         compacts (repeat 50 #(compact-database db))
-        ops (shuffle (concat writes reads compacts updates))]
+        ops (shuffle (concat writes reads compacts updates seeks))]
     (try
       (doall (pmap #(%) ops))
       (let [result (with-read-transaction [db tx]
