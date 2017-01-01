@@ -410,7 +410,7 @@
        (do ~@body)
        (finally (.unlock (.readLock lock#))))))
 
-(defmacro with-write-lock [[database] & body]
+(defmacro with-compaction-lock [[database] & body]
   `(let [lock# (:compaction-lock ~database)]
      (.lock (.writeLock lock#))
      (try
@@ -530,7 +530,7 @@
           archive-path (str origin-path "_archive_" (System/currentTimeMillis) "_" (int (rand 100000)))
           db-data (perform-compaction (:filepath db) temp-path)]
       ;;(move-file-atomically origin-path archive-path)
-      (with-write-lock [db]
+      (with-compaction-lock [db]
         (move-file-atomically temp-path origin-path)
         (reset! (:data db) (assoc db-data :cache (create-cache)))))))
 
