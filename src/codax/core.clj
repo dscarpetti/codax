@@ -2,7 +2,13 @@
   (:require
    [codax.operations :as ops]
    [codax.prefix :refer [set-prefix prefix-path]]
-   [codax.store :as store :refer [open-database list-all-databases close-database]]))
+   [codax.store :as store]));; :refer [open-database list-all-databases close-database]]))
+
+(defn open-database [filepath]
+  (store/open-database filepath))
+
+(defn close-database [filepath-or-db]
+  (store/close-database filepath-or-db))
 
 (defn get-at
   "Returns the map or othre value at the supplied `path`. If it has been modified within
