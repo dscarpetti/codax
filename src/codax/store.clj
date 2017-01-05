@@ -404,14 +404,14 @@
 
 ;;;; Transaction Macros
 (defmacro with-read-lock [[database] & body]
-  `(let [lock# (:compaction-lock ~database)]
+  `(let [^ReentrantReadWriteLock lock# (:compaction-lock ~database)]
      (.lock (.readLock lock#))
      (try
        (do ~@body)
        (finally (.unlock (.readLock lock#))))))
 
 (defmacro with-compaction-lock [[database] & body]
-  `(let [lock# (:compaction-lock ~database)]
+  `(let [^ReentrantReadWriteLock lock# (:compaction-lock ~database)]
      (.lock (.writeLock lock#))
      (try
        (do ~@body)
