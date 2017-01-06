@@ -521,10 +521,15 @@
 
 
 (defn move-file-atomically [from to]
-  (Files/move
-   (Paths/get from (make-array String 0))
-   (Paths/get to (make-array String 0))
-   (into-array [StandardCopyOption/ATOMIC_MOVE])))
+  (try
+    (Files/move
+     (Paths/get from (make-array String 0))
+     (Paths/get to (make-array String 0))
+     (into-array [StandardCopyOption/ATOMIC_MOVE]))
+    (catch AccessDeniedException e
+      (println "ERROR: AccessDeniedException Moving" from  "to" to ". Retrying")
+      (Thread/sleep 10)
+      (move-file-atomically from to))))
 
 (defn compact-database [db]
   (locking (:lock-obj db)
