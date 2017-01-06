@@ -8,7 +8,7 @@
   (:import
    [java.io RandomAccessFile FileOutputStream DataOutputStream]
    [java.nio ByteBuffer]
-   [java.nio.file Files StandardCopyOption Paths]
+   [java.nio.file AccessDeniedException Files StandardCopyOption Paths]
    [java.util.concurrent.locks ReentrantReadWriteLock])
 
   (:gen-class))
@@ -23,15 +23,12 @@
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 (defn load-node [txn address]
-  (let [file (RandomAccessFile. ^String (:filepath (:db txn)) "r")]
-    (try
-      (.seek file address)
-      (let [size (.readLong file)
-            data (byte-array size)]
-        (.read file data)
-        (nippy/thaw data nippy-options))
-      (finally
-        (.close file)))))
+  (let [file ^RandomAccessFile (:raf txn)]
+    (.seek file address)
+    (let [size (.readLong file)
+          data (byte-array size)]
+      (.read file data)
+      (nippy/thaw data nippy-options))))
 
 (defn get-node [txn address]
   (if (nil? address)
@@ -125,10 +122,11 @@
 (defn list-all-databases []
   (println (count (doall (map (fn [[filepath _]] (println filepath)) @open-databases))) "open databases"))
 
-(defn transaction [database]
+(defn transaction [database raf-mode]
   (let [data @(:data database)
         root-id (:root-id data)
         txn {:db database
+             :raf (RandomAccessFile. ^String (:filepath database) ^String raf-mode)
              :address nil
              :new-nodes {};(sorted-map)
              :root-id root-id}]
@@ -164,20 +162,18 @@
                                          [] records))]
         (address-node fulfillments promise :internal new-records)))))
 
-(defn update-database! [db filepath file-offset root-location data]
-  (let [file (RandomAccessFile. ^String filepath "rwd")]
-    (try
-      (doto file
-        (.seek file-offset)
-        (.write (.array ^java.nio.ByteBuffer data)))
-      (swap! (:data db) #(assoc %
-                          :root-id root-location
-                          :offset (.length file)
-                          :write-counter (if-let [count (:write-counter %)]
-                                           (inc count)
-                                           1)))
-      nil
-      (finally (.close file)))))
+(defn update-database! [db raf file-offset root-location data]
+  (let [file ^RandomAccessFile raf]
+    (doto file
+      (.seek file-offset)
+      (.write (.array ^java.nio.ByteBuffer data)))
+    (swap! (:data db) #(assoc %
+                              :root-id root-location
+                              :offset (.length file)
+                              :write-counter (if-let [count (:write-counter %)]
+                                               (inc count)
+                                               1)))
+    nil))
 
 (declare compact-database)
 
@@ -198,7 +194,8 @@
         (.putLong bb (long (count ba)))
         (.put bb ^bytes ba))
       (.putLong bb (:last-offset fulfillment))
-      (update-database! (:db tx) filepath file-offset (:last-offset fulfillment) bb)
+      (update-database! (:db tx) (:raf tx) file-offset (:last-offset fulfillment) bb)
+      (.close ^RandomAccessFile (:raf tx))
       (when (and (:write-counter db-data)
                  (:compaction-threshold (:db tx))
                  (>= (:write-counter db-data) (:compaction-threshold (:db tx))))
@@ -417,16 +414,22 @@
        (do ~@body)
        (finally (.unlock (.writeLock lock#))))))
 
+(defmacro with-open-transaction [[database tx-symbol raf-mode] & body]
+  `(let [~tx-symbol (transaction ~database ~raf-mode)]
+     (try
+       (do ~@body)
+       (finally (.close ^RandomAccessFile (:raf ~tx-symbol))))))
+
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
      (locking (:lock-obj db#)
-       (let [~tx-symbol (transaction db#)]
+       (with-open-transaction [db# ~tx-symbol "rwd"]
          (commit! (do ~@body))))))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
-  `(let [db# ~database
-         ~tx-symbol (transaction db#)]
-     (with-read-lock [db#] ~@body)))
+  `(let [db# ~database]
+     (with-open-transaction [db# ~tx-symbol "r"]
+       (with-read-lock [db#] ~@body))))
 
 
 ;;;;; Compaction
