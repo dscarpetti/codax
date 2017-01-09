@@ -13,7 +13,7 @@
 
 ;;;;; Settings
 
-(def order 20)
+(def order 32)
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 ;;;;; Databases
@@ -25,7 +25,7 @@
 (defn- to-path [str]
   (Paths/get str (make-array String 0)))
 
-(defn- read-manifest-buffer [buf]
+(defn- read-manifest-buffer [^ByteBuffer buf]
   (.position buf 16)
   (loop [root-id 1
          id-counter 1
@@ -91,7 +91,7 @@
           db {:path path
               :write-lock (Object.)
               :data (atom {:manifest manifest
-                           ;;:cache (cache/lru-cache-factory {} :threshold 512)
+                           :cache (cache/lru-cache-factory {} :threshold 10000)
                            :root-id root-id
                            :id-counter id-counter
                            :nodes-offset nodes-offset})}]
@@ -100,17 +100,26 @@
 
 ;;;;; Transactions
 
-(defn- update-database! [{:keys [db root-id id-counter]} nodes-offset manifest-delta]
+(defn- update-database! [{:keys [db root-id id-counter manifest]} nodes-offset manifest-delta nodes-by-address]
   (swap! (:data db)
          (fn [data]
-           (-> data
-               (assoc :root-id root-id
-                      :id-counter id-counter
-                      :nodes-offset nodes-offset)
-               (update :manifest merge manifest-delta)))))
+           (let [updated-cache (reduce-kv (fn [c address node]
+                                            (let [old-address (manifest (:id node))
+                                                  c (cache/evict c old-address)]
+                                              (if (not (nil? node))
+                                                (cache/miss c address node)
+                                                c)))
+                                          (:cache data)
+                                          nodes-by-address)]
+             (-> data
+                 (assoc :root-id root-id
+                        :cache updated-cache
+                        :id-counter id-counter
+                        :nodes-offset nodes-offset)
+                 (update :manifest merge manifest-delta))))))
 
-(defn- append-bytes-to-file! [path bytes]
-  (let [stream (FileOutputStream. path true)]
+(defn- append-bytes-to-file! [^String path ^bytes bytes]
+  (let [stream (FileOutputStream. ^String path true)]
     (try
       (.write stream bytes)
       (finally
@@ -118,7 +127,7 @@
         (.sync (.getFD stream))
         (.close stream)))))
 
-(defn- save-buffers! [path manifest-buffer nodes-buffer]
+(defn- save-buffers! [path ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (append-bytes-to-file! (str path "/manifest") (.array manifest-buffer))
   (append-bytes-to-file! (str path "/nodes") (.array nodes-buffer)))
 
@@ -128,18 +137,19 @@
            address (:nodes-offset txn)
            manifest-delta {}
            node-buffers []
+           nodes-by-address {}
            total-length 0]
       (if (empty? remaining-nodes)
         (let [all-nodes-buffer (ByteBuffer/allocate (+ 8 total-length))]
-          (doseq [b node-buffers]
+          (doseq [^ByteBuffer b node-buffers]
             (.put all-nodes-buffer (.array b)))
           (.putLong all-nodes-buffer (long 0))
           (.putLong manifest-buffer (long 0))
           (.putLong manifest-buffer (long (:root-id txn)))
           (save-buffers! (:path (:db txn)) manifest-buffer all-nodes-buffer)
-          (update-database! txn (+ 8 address) manifest-delta))
+          (update-database! txn (+ 8 address) manifest-delta nodes-by-address))
         (let [[id node] (first remaining-nodes)
-              encoded-value (nippy/freeze node nippy-options)
+              ^bytes encoded-value (nippy/freeze node nippy-options)
               size (count encoded-value)
               buf (ByteBuffer/allocate (+ 8 size))]
           (.putLong buf (long size))
@@ -150,6 +160,7 @@
                  (+ 8 address size)
                  (assoc manifest-delta id address)
                  (conj node-buffers buf)
+                 (assoc nodes-by-address address node)
                  (+ 8 size total-length)))))))
 
 
@@ -187,20 +198,25 @@
         (nippy/thaw data nippy-options))
       (finally (.close file)))))
 
+(def cache-misses (atom 0))
+(def cache-hits (atom 0))
+
 (defn- load-node [{:keys [db manifest]} id]
   (let [address (manifest id)]
     (if (nil? address)
       {:type :leaf
        :id 1
        :records (sorted-map)}
-      (read-node-from-file db address))))
-(comment((      (let [cache (:cache @(:data db))]
+;      (read-node-from-file db address))))
+      (let [cache (:cache @(:data db))]
         (if (cache/has? cache address)
           (do
             (swap! (:data db) assoc :cache (cache/hit cache address))
+            (swap! cache-hits inc)
             (cache/lookup cache address))
           (let [loaded-node (read-node-from-file db address)]
             (swap! (:data db) assoc :cache (cache/miss cache address loaded-node))
+            (swap! cache-misses inc)
             loaded-node))))))
 
 (defn get-node [txn id]
@@ -527,6 +543,8 @@
       (pprint new-data))))
 
 (defn stress-database []
+  (reset! cache-hits 0)
+  (reset! cache-misses 0)
   (let [db (open-database "data/crash-test-dummy-address")
         inc-count #(if (number? %)
                      (inc %)
@@ -534,12 +552,15 @@
         writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 10000)))
         updates (repeat 10000 #(with-write-transaction [db tx] (b+insert tx "counter" (inc-count (b+get tx "counter")))))
         reads (repeat 10000 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
-        seeks (repeat 1000 #(with-read-transaction [db tx] (b+seek tx "0" "z")))
+        seeks nil;(repeat 1000 #(with-read-transaction [db tx] (b+seek tx "0" "z")))
         ops (shuffle (concat writes reads updates seeks))]
     (try
       (dorun (pmap #(%) ops))
       (let [result (with-read-transaction [db tx]
                      (b+seek tx (str (char 0x00)) (str (char 0xff))))]
+        (println "cache-size" (count (:cache @(:data db))))
+        (println "cache hits" @cache-hits)
+        (println "cache misses" @cache-misses)
         (println (count result))
         (println (last result)))
       (finally (close-database db)))))
