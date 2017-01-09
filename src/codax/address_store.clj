@@ -9,7 +9,8 @@
   (:import
    [java.io RandomAccessFile FileOutputStream]
    [java.nio ByteBuffer]
-   [java.nio.file Files Paths]))
+   [java.nio.file Files Paths StandardOpenOption]
+   [java.nio.channels FileChannel]))
 
 ;;;;; Settings
 
@@ -65,7 +66,7 @@
             (.writeInt manifest-file file-version-tag)
             (.writeInt manifest-file order)))
         (finally (.close manifest-file)))
-         (read-manifest-buffer (ByteBuffer/wrap (Files/readAllBytes (to-path (str path "/manifest"))))))))
+      (read-manifest-buffer (ByteBuffer/wrap (Files/readAllBytes (to-path (str path "/manifest"))))))))
 
 (defn- load-nodes-offset [path]
   (let [node-file (RandomAccessFile. (str path "/nodes") "rw")]
@@ -79,19 +80,25 @@
                (:path path-or-db))]
     (when-let [open-db (@open-databases path)]
       (reset! (:data open-db) false)
+      (.close (:manifest-channel open-db))
+      (.close (:nodes-channel open-db))
       (swap! open-databases dissoc path open-db))))
 
 (defn open-database [path]
   (if-let [existing-db (@open-databases path)]
-    (do (println "db already open")
+    (do (println "db already open" path)
         (close-database path)
         (open-database path))
     (let [{:keys [root-id id-counter manifest]} (load-manifest path)
           nodes-offset (load-nodes-offset path)
           db {:path path
               :write-lock (Object.)
+              :manifest-channel (FileChannel/open (to-path (str path "/manifest")) (into-array [StandardOpenOption/APPEND
+                                                                                                StandardOpenOption/SYNC]))
+              :nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/APPEND
+                                                                                          StandardOpenOption/SYNC]))
               :data (atom {:manifest manifest
-                           :cache (cache/lru-cache-factory {} :threshold 10000)
+                           :cache (cache/lru-cache-factory {} :threshold 32)
                            :root-id root-id
                            :id-counter id-counter
                            :nodes-offset nodes-offset})}]
@@ -127,9 +134,16 @@
         (.sync (.getFD stream))
         (.close stream)))))
 
-(defn- save-buffers! [path ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
-  (append-bytes-to-file! (str path "/manifest") (.array manifest-buffer))
-  (append-bytes-to-file! (str path "/nodes") (.array nodes-buffer)))
+(defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
+  (let [^FileChannel manifest-channel (:manifest-channel db)
+        ^FileChannel nodes-channel (:nodes-channel db)]
+    (.write manifest-channel (.flip manifest-buffer))
+    (.write nodes-channel (.flip nodes-buffer))))
+;;    (.force manifest-channel false)
+;;    (.force nodes-channel false)))
+
+;    (append-bytes-to-file! (str (:path db) "/manifest") (.array manifest-buffer))
+;    (append-bytes-to-file! (str (:path db) "/nodes") (.array nodes-buffer))))
 
 (defn commit! [txn]
   (let [manifest-buffer (ByteBuffer/allocate (* 16 (inc (count (:dirty-nodes txn)))))]
@@ -146,7 +160,7 @@
           (.putLong all-nodes-buffer (long 0))
           (.putLong manifest-buffer (long 0))
           (.putLong manifest-buffer (long (:root-id txn)))
-          (save-buffers! (:path (:db txn)) manifest-buffer all-nodes-buffer)
+          (save-buffers! (:db txn) manifest-buffer all-nodes-buffer)
           (update-database! txn (+ 8 address) manifest-delta nodes-by-address))
         (let [[id node] (first remaining-nodes)
               ^bytes encoded-value (nippy/freeze node nippy-options)
@@ -196,6 +210,9 @@
             data (byte-array size)]
         (.read file data)
         (nippy/thaw data nippy-options))
+      (catch Exception e
+        (println address)
+        (throw e))
       (finally (.close file)))))
 
 (def cache-misses (atom 0))
@@ -545,7 +562,7 @@
 (defn stress-database []
   (reset! cache-hits 0)
   (reset! cache-misses 0)
-  (let [db (open-database "data/crash-test-dummy-address")
+  (let [db (open-database "data/crash-test-dummy-address-2")
         inc-count #(if (number? %)
                      (inc %)
                      1)
