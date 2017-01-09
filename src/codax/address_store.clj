@@ -130,10 +130,8 @@
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (let [^FileChannel manifest-channel (:manifest-channel db)
         ^FileChannel nodes-channel (:nodes-channel db)]
-    (.write manifest-channel (.flip manifest-buffer))
-    (.write nodes-channel (.flip nodes-buffer))))
-;;    (.force manifest-channel false)
-;;    (.force nodes-channel false)))
+    (.write manifest-channel ^ByteBuffer (.flip manifest-buffer))
+    (.write nodes-channel ^ByteBuffer (.flip nodes-buffer))))
 
 (defn commit! [txn]
   (let [manifest-buffer (ByteBuffer/allocate (* 16 (inc (count (:dirty-nodes txn)))))]
