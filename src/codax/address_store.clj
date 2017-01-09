@@ -82,6 +82,7 @@
       (reset! (:data open-db) false)
       (.close (:manifest-channel open-db))
       (.close (:nodes-channel open-db))
+      (.close (:file-reader open-db))
       (swap! open-databases dissoc path open-db))))
 
 (defn open-database [path]
@@ -97,6 +98,7 @@
                                                                                                 StandardOpenOption/SYNC]))
               :nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/APPEND
                                                                                           StandardOpenOption/SYNC]))
+              :file-reader (RandomAccessFile. (str path "/nodes") "r")
               :data (atom {:manifest manifest
                            :cache (cache/lru-cache-factory {} :threshold 32)
                            :root-id root-id
@@ -125,15 +127,6 @@
                         :nodes-offset nodes-offset)
                  (update :manifest merge manifest-delta))))))
 
-(defn- append-bytes-to-file! [^String path ^bytes bytes]
-  (let [stream (FileOutputStream. ^String path true)]
-    (try
-      (.write stream bytes)
-      (finally
-        (.flush stream)
-        (.sync (.getFD stream))
-        (.close stream)))))
-
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (let [^FileChannel manifest-channel (:manifest-channel db)
         ^FileChannel nodes-channel (:nodes-channel db)]
@@ -141,9 +134,6 @@
     (.write nodes-channel (.flip nodes-buffer))))
 ;;    (.force manifest-channel false)
 ;;    (.force nodes-channel false)))
-
-;    (append-bytes-to-file! (str (:path db) "/manifest") (.array manifest-buffer))
-;    (append-bytes-to-file! (str (:path db) "/nodes") (.array nodes-buffer))))
 
 (defn commit! [txn]
   (let [manifest-buffer (ByteBuffer/allocate (* 16 (inc (count (:dirty-nodes txn)))))]
@@ -177,7 +167,6 @@
                  (assoc nodes-by-address address node)
                  (+ 8 size total-length)))))))
 
-
 (defn make-transaction [database]
   (let [{:keys [manifest root-id id-counter nodes-offset]} @(:data database)]
     {:db database
@@ -203,17 +192,13 @@
 ;;; Node Fetching
 
 (defn- read-node-from-file [db address]
-  (let [file (RandomAccessFile. (str (:path db) "/nodes") "r")]
-    (try
+  (let [file ^RandomAccessFile (:file-reader db)];(RandomAccessFile. (str (:path db) "/nodes") "r")]
+    (locking file
       (.seek file address)
       (let [size (.readLong file)
             data (byte-array size)]
         (.read file data)
-        (nippy/thaw data nippy-options))
-      (catch Exception e
-        (println address)
-        (throw e))
-      (finally (.close file)))))
+        (nippy/thaw data nippy-options)))))
 
 (def cache-misses (atom 0))
 (def cache-hits (atom 0))
@@ -224,17 +209,17 @@
       {:type :leaf
        :id 1
        :records (sorted-map)}
-;      (read-node-from-file db address))))
-      (let [cache (:cache @(:data db))]
-        (if (cache/has? cache address)
-          (do
-            (swap! (:data db) assoc :cache (cache/hit cache address))
-            (swap! cache-hits inc)
-            (cache/lookup cache address))
-          (let [loaded-node (read-node-from-file db address)]
-            (swap! (:data db) assoc :cache (cache/miss cache address loaded-node))
-            (swap! cache-misses inc)
-            loaded-node))))))
+                                        ;      (read-node-from-file db address))))
+        (let [cache (:cache @(:data db))]
+          (if (cache/has? cache address)
+            (do
+              (swap! (:data db) assoc :cache (cache/hit cache address))
+              (swap! cache-hits inc)
+              (cache/lookup cache address))
+            (let [loaded-node (read-node-from-file db address)]
+              (swap! (:data db) assoc :cache (cache/miss cache address loaded-node))
+              (swap! cache-misses inc)
+              loaded-node))))))
 
 (defn get-node [txn id]
   (or
