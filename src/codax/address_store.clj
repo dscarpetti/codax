@@ -9,7 +9,7 @@
   (:import
    [java.io RandomAccessFile FileOutputStream]
    [java.nio ByteBuffer]
-   [java.nio.file Files Paths StandardOpenOption]
+   [java.nio.file Files Paths StandardCopyOption StandardOpenOption]
    [java.nio.channels FileChannel]))
 
 ;;;;; Settings
@@ -74,16 +74,28 @@
       (.length node-file)
       (finally (.close node-file)))))
 
-(defn close-database [path-or-db]
-  (let [path (if (string? path-or-db)
-               path-or-db
-               (:path path-or-db))]
-    (when-let [open-db (@open-databases path)]
-      (reset! (:data open-db) false)
-      (.close (:manifest-channel open-db))
-      (.close (:nodes-channel open-db))
-      (.close (:file-reader open-db))
-      (swap! open-databases dissoc path open-db))))
+(defn- open-file-handles [data path]
+  (assoc data
+         :manifest-channel (FileChannel/open (to-path (str path "/manifest")) (into-array [StandardOpenOption/APPEND
+                                                                                           StandardOpenOption/SYNC]))
+         :nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/APPEND
+                                                                                     StandardOpenOption/SYNC]))
+         :file-reader (RandomAccessFile. (str path "/nodes") "r")))
+
+(defn- close-file-handles [db]
+  (let [data @(:data db)]
+    (.close (:manifest-channel data))
+    (.close (:nodes-channel data))
+    (.close (:file-reader data))))
+
+(defn- initialize-database-data! [{:keys [path data] :as database} manifest nodes-offset]
+  (swap! data
+         #(-> %
+              (open-file-handles path)
+              (assoc :cache (cache/lru-cache-factory {} :threshold 32)
+                     :manifest manifest
+                     :nodes-offset nodes-offset)))
+  database)
 
 (defn open-database [path]
   (if-let [existing-db (@open-databases path)]
@@ -94,22 +106,25 @@
           nodes-offset (load-nodes-offset path)
           db {:path path
               :write-lock (Object.)
-              :manifest-channel (FileChannel/open (to-path (str path "/manifest")) (into-array [StandardOpenOption/APPEND
-                                                                                                StandardOpenOption/SYNC]))
-              :nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/APPEND
-                                                                                          StandardOpenOption/SYNC]))
-              :file-reader (RandomAccessFile. (str path "/nodes") "r")
-              :data (atom {:manifest manifest
-                           :cache (cache/lru-cache-factory {} :threshold 32)
-                           :root-id root-id
-                           :id-counter id-counter
-                           :nodes-offset nodes-offset})}]
+              :data (atom {:root-id root-id
+                           :id-counter id-counter})}]
+      (initialize-database-data! db manifest nodes-offset)
       (swap! open-databases assoc path db)
       db)))
 
+(defn close-database [path-or-db]
+  (let [path (if (string? path-or-db)
+               path-or-db
+               (:path path-or-db))]
+    (when-let [open-db (@open-databases path)]
+      (close-file-handles open-db)
+      (reset! (:data open-db) false)
+      (swap! open-databases dissoc path open-db)
+      true)))
+
 ;;; Compaction
 
-(defn compact-manifest [path manifest root-id]
+(defn- compact-manifest [path manifest root-id]
   (let [compact-manifest-buffer (ByteBuffer/allocate (* 16 (+ 2 (count manifest))))
         compact-manifest-channel (FileChannel/open (to-path (str path "/manifest_COMPACT")) (into-array [StandardOpenOption/CREATE_NEW
                                                                                                          StandardOpenOption/WRITE
@@ -132,12 +147,12 @@
       (.write compact-manifest-buffer)
       (.close))))
 
-(defn compact-nodes [path manifest]
+(defn- compact-nodes [path manifest]
   (let [nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/READ]))
         compact-nodes-channel (FileChannel/open (to-path (str path "/nodes_COMPACT")) (into-array [StandardOpenOption/CREATE_NEW
                                                                                                    StandardOpenOption/APPEND]))]
     (loop [address 0
-           new-manifest (transient [])
+           new-manifest (transient {})
            remaining-manifest manifest]
       (if-let [[id original-address] (first remaining-manifest)]
         (do
@@ -148,21 +163,34 @@
             (.write compact-nodes-channel (.flip size-buf))
             (.transferFrom compact-nodes-channel nodes-channel (+ 8 address) size)
             (recur (+ 8 size address)
-                   (conj! new-manifest [id address])
+                   (assoc! new-manifest id address)
                    (rest remaining-manifest))))
         (do
           (.write compact-nodes-channel (ByteBuffer/allocate 8)) ; 8 empty bytes indicate the end of a commit
           (.force compact-nodes-channel true)
           (.close compact-nodes-channel)
           (.close nodes-channel)
-          (persistent! new-manifest))))))
+          {:new-manifest (persistent! new-manifest)
+           :new-nodes-offset (+ 8 address)})))))
+
+(defn- move-file-atomically [from to]
+    (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
+
+(defn- move-compact-files [path]
+  (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
+  (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))
+  (move-file-atomically (str path "/nodes_COMPACT") (str path "/nodes"))
+  (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
 (defn compact-database [db]
   (let [path (:path db)
         {:keys [manifest root-id]} @(:data db)
-        new-manifest (compact-nodes path manifest)]
-    (println new-manifest)
-    (compact-manifest path new-manifest root-id)))
+        {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
+    (compact-manifest path new-manifest root-id)
+    (close-file-handles db)
+    (move-compact-files path)
+    (initialize-database-data! db new-manifest new-nodes-offset)
+    true))
 
 ;;;;; Transactions
 
@@ -185,8 +213,9 @@
                  (update :manifest merge manifest-delta))))))
 
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
-  (let [^FileChannel manifest-channel (:manifest-channel db)
-        ^FileChannel nodes-channel (:nodes-channel db)]
+  (let [data @(:data db)
+        ^FileChannel manifest-channel (:manifest-channel data)
+        ^FileChannel nodes-channel (:nodes-channel data)]
     (.write manifest-channel ^ByteBuffer (.flip manifest-buffer))
     (.write nodes-channel ^ByteBuffer (.flip nodes-buffer))))
 
@@ -246,14 +275,13 @@
 
 ;;; Node Fetching
 
-(defn- read-node-from-file [db address]
-  (let [file ^RandomAccessFile (:file-reader db)];(RandomAccessFile. (str (:path db) "/nodes") "r")]
-    (locking file
-      (.seek file address)
-      (let [size (.readLong file)
-            data (byte-array size)]
-        (.read file data)
-        (nippy/thaw data nippy-options)))))
+(defn- read-node-from-file [^RandomAccessFile file address]
+  (locking file
+    (.seek file address)
+    (let [size (.readLong file)
+          data (byte-array size)]
+      (.read file data)
+      (nippy/thaw data nippy-options))))
 
 (def cache-misses (atom 0))
 (def cache-hits (atom 0))
@@ -264,22 +292,27 @@
       {:type :leaf
        :id 1
        :records (sorted-map)}
-                                        ;      (read-node-from-file db address))))
-        (let [cache (:cache @(:data db))]
+      (let [data @(:data db)
+            cache (:cache data)]
           (if (cache/has? cache address)
             (do
               (swap! (:data db) assoc :cache (cache/hit cache address))
               (swap! cache-hits inc)
               (cache/lookup cache address))
-            (let [loaded-node (read-node-from-file db address)]
+            (let [loaded-node (read-node-from-file (:file-reader data) address)]
               (swap! (:data db) assoc :cache (cache/miss cache address loaded-node))
               (swap! cache-misses inc)
               loaded-node))))))
 
 (defn get-node [txn id]
-  (or
-   ((:dirty-nodes txn) id)
-   (load-node txn id)))
+  (try
+    (or
+     ((:dirty-nodes txn) id)
+     (load-node txn id))
+    (catch Exception e
+      (println txn)
+      (throw e))))
+
 
 ;;;;; B+Tree
 
@@ -598,11 +631,10 @@
       (pprint old-data)
       (pprint new-data))))
 
-(defn stress-database []
+(defn stress-database [db]
   (reset! cache-hits 0)
   (reset! cache-misses 0)
-  (let [db (open-database "data/crash-test-dummy-address-2")
-        inc-count #(if (number? %)
+  (let [inc-count #(if (number? %)
                      (inc %)
                      1)
         writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 10000)))
@@ -610,7 +642,7 @@
         reads (repeat 10000 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
         seeks nil;(repeat 1000 #(with-read-transaction [db tx] (b+seek tx "0" "z")))
         ops (shuffle (concat writes reads updates seeks))]
-    (try
+;    (try
       (dorun (pmap #(%) ops))
       (let [result (with-read-transaction [db tx]
                      (b+seek tx (str (char 0x00)) (str (char 0xff))))]
@@ -618,6 +650,54 @@
         (println "cache hits" @cache-hits)
         (println "cache misses" @cache-misses)
         (println (count result))
-        (println (last result)))
-      (finally (close-database db)))))
-l
+        (println (last result)))))
+;      (finally (close-database db)))))
+
+(defn compaction-test [path]
+  (try
+    (let [db (open-database path)
+          writes-1 (shuffle (map #(fn [] (with-write-transaction [db tx] (b+insert tx % %))) (range 20)))
+          check-1 (into [] (map #(vector % %) (range 20)))
+          check-2 (into [] (map #(vector % %) (range 40)))
+          check-3 (into [] (map #(vector % %) (range 60)))
+          check-4 (into [] (map #(vector % %) (range 20 60)))]
+      (dorun (map #(%) writes-1))
+      (let [run-result (with-read-transaction [db tx] (b+seek tx 0 100))
+            _ (println "1. result == check:         " (= run-result check-1))
+            db (do (close-database db)
+                   (println "1. db closed and reopened")
+                   (open-database path))
+            ro-result (with-read-transaction [db tx] (b+seek tx 0 100))
+            _ (do (println "1. ro-result == check       " (= check-1 ro-result))
+                  (compact-database db)
+                  (println "1. db compacted"))
+            pc-result (with-read-transaction [db tx] (b+seek tx 0 100))
+            writes-2 (shuffle (map #(fn [] (with-write-transaction [db tx] (b+insert tx % %))) (range 20 40)))]
+        (println "1. pc-result == check" (= check-1 pc-result))
+        (dorun (map #(%) writes-2))
+        (let [run-result (with-read-transaction [db tx] (b+seek tx 0 100))
+              _ (println "2. result == check:          " (= run-result check-2))
+              _ (do (compact-database db)
+                    (println "2. db compacted"))
+              pc-result (with-read-transaction [db tx] (b+seek tx 0 100))
+              writes-3 (shuffle (map #(fn [] (with-write-transaction [db tx] (b+insert tx % %))) (range 0 60)))]
+          (println "2. pc-result == check       " (= check-2 pc-result))
+          (dorun (map #(%) writes-3))
+          (let [run-result (with-read-transaction [db tx] (b+seek tx 0 100))
+                _ (println "3. result == check:         " (= run-result check-3))
+                _ (do (compact-database db)
+                      (println "3. db compacted"))
+                pc-result (with-read-transaction [db tx] (b+seek tx 0 100))
+                writes-4 (shuffle (map #(fn [] (with-write-transaction [db tx] (b+remove tx %))) (range 0 20)))]
+            (println "3. pc-result == check:       " (= run-result check-3))
+            (dorun (map #(%) writes-4))
+            (let [run-result (with-read-transaction [db tx] (b+seek tx 0 100))]
+              (println "4. result == check         " (= run-result check-4))
+              (let [db (do (close-database db)
+                           (println "4. db closed and reopened")
+                           (open-database path))
+                    ro-result (with-read-transaction [db tx] (b+seek tx 0 100))]
+                (println "4. ro-result == check       " (= ro-result check-4))
+                (compact-database db)
+                (with-write-transaction [db tx] (b+insert tx 99 99))))))))
+    (finally (close-database path))))
