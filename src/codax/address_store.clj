@@ -10,11 +10,13 @@
    [java.io RandomAccessFile FileOutputStream]
    [java.nio ByteBuffer]
    [java.nio.file Files Paths StandardCopyOption StandardOpenOption]
-   [java.nio.channels FileChannel]))
+   [java.nio.channels FileChannel]
+   [java.util.concurrent.locks ReentrantReadWriteLock]))
 
 ;;;;; Settings
 
 (def order 32)
+(def compaction-threshold 1000)
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 ;;;;; Databases
@@ -84,9 +86,9 @@
 
 (defn- close-file-handles [db]
   (let [data @(:data db)]
-    (.close (:manifest-channel data))
-    (.close (:nodes-channel data))
-    (.close (:file-reader data))))
+    (.close ^FileChannel (:manifest-channel data))
+    (.close ^FileChannel (:nodes-channel data))
+    (.close ^RandomAccessFile (:file-reader data))))
 
 (defn- initialize-database-data! [{:keys [path data] :as database} manifest nodes-offset]
   (swap! data
@@ -94,6 +96,7 @@
               (open-file-handles path)
               (assoc :cache (cache/lru-cache-factory {} :threshold 32)
                      :manifest manifest
+                     :writes-since-compaction 0
                      :nodes-offset nodes-offset)))
   database)
 
@@ -106,6 +109,7 @@
           nodes-offset (load-nodes-offset path)
           db {:path path
               :write-lock (Object.)
+              :compaction-lock (ReentrantReadWriteLock. true)
               :data (atom {:root-id root-id
                            :id-counter id-counter})}]
       (initialize-database-data! db manifest nodes-offset)
@@ -123,6 +127,20 @@
       true)))
 
 ;;; Compaction
+
+(defmacro with-read-lock [[database] & body]
+  `(let [^ReentrantReadWriteLock lock# (:compaction-lock ~database)]
+     (.lock (.readLock lock#))
+     (try
+       (do ~@body)
+       (finally (.unlock (.readLock lock#))))))
+
+(defmacro with-compaction-lock [[database] & body]
+  `(let [^ReentrantReadWriteLock lock# (:compaction-lock ~database)]
+     (.lock (.writeLock lock#))
+     (try
+       (do ~@body)
+       (finally (.unlock (.writeLock lock#))))))
 
 (defn- compact-manifest [path manifest root-id]
   (let [compact-manifest-buffer (ByteBuffer/allocate (* 16 (+ 2 (count manifest))))
@@ -156,11 +174,11 @@
            remaining-manifest manifest]
       (if-let [[id original-address] (first remaining-manifest)]
         (do
-          (.position nodes-channel original-address)
+          (.position nodes-channel ^long original-address)
           (let [size-buf (ByteBuffer/allocate 8)
                 _ (.read nodes-channel size-buf)
-                size (.getLong (.flip size-buf))]
-            (.write compact-nodes-channel (.flip size-buf))
+                size (.getLong ^ByteBuffer (.flip size-buf))]
+            (.write compact-nodes-channel ^ByteBuffer (.flip size-buf))
             (.transferFrom compact-nodes-channel nodes-channel (+ 8 address) size)
             (recur (+ 8 size address)
                    (assoc! new-manifest id address)
@@ -183,14 +201,16 @@
   (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
 (defn compact-database [db]
-  (let [path (:path db)
-        {:keys [manifest root-id]} @(:data db)
-        {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
-    (compact-manifest path new-manifest root-id)
-    (close-file-handles db)
-    (move-compact-files path)
-    (initialize-database-data! db new-manifest new-nodes-offset)
-    true))
+  (locking (:write-lock db)
+    (let [path (:path db)
+          {:keys [manifest root-id]} @(:data db)
+          {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
+      (compact-manifest path new-manifest root-id)
+      (with-compaction-lock [db]
+        (close-file-handles db)
+        (move-compact-files path)
+        (initialize-database-data! db new-manifest new-nodes-offset))
+      true)))
 
 ;;;;; Transactions
 
@@ -209,8 +229,13 @@
                  (assoc :root-id root-id
                         :cache updated-cache
                         :id-counter id-counter
+                        :writes-since-compaction (inc (:writes-since-compaction data))
                         :nodes-offset nodes-offset)
-                 (update :manifest merge manifest-delta))))))
+                 (update :manifest merge manifest-delta)))))
+  (when (<= compaction-threshold (:writes-since-compaction @(:data db)))
+    (println "Auto Compacting")
+    (time (compact-database db))))
+
 
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (let [data @(:data db)
@@ -249,7 +274,9 @@
                  (assoc manifest-delta id address)
                  (conj node-buffers buf)
                  (assoc nodes-by-address address node)
-                 (+ 8 size total-length)))))))
+                 (+ 8 size total-length))))))
+  nil)
+
 
 (defn make-transaction [database]
   (let [{:keys [manifest root-id id-counter nodes-offset]} @(:data database)]
@@ -270,8 +297,9 @@
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
-     (let [~tx-symbol (make-transaction db#)]
-       ~@body)))
+     (with-read-lock [db#]
+       (let [~tx-symbol (make-transaction db#)]
+         ~@body))))
 
 ;;; Node Fetching
 
@@ -631,10 +659,11 @@
       (pprint old-data)
       (pprint new-data))))
 
-(defn stress-database [db]
+(defn stress-database [path]
   (reset! cache-hits 0)
   (reset! cache-misses 0)
-  (let [inc-count #(if (number? %)
+  (let [db (open-database path)
+        inc-count #(if (number? %)
                      (inc %)
                      1)
         writes (doall (map #(fn [] (with-write-transaction [db tx] (b+insert tx (str %) (str "v" %)))) (range 10000)))
@@ -642,7 +671,7 @@
         reads (repeat 10000 #(with-read-transaction [db tx] (b+get tx (str (int (rand 1000)) "x"))))
         seeks nil;(repeat 1000 #(with-read-transaction [db tx] (b+seek tx "0" "z")))
         ops (shuffle (concat writes reads updates seeks))]
-;    (try
+    (try
       (dorun (pmap #(%) ops))
       (let [result (with-read-transaction [db tx]
                      (b+seek tx (str (char 0x00)) (str (char 0xff))))]
@@ -650,8 +679,8 @@
         (println "cache hits" @cache-hits)
         (println "cache misses" @cache-misses)
         (println (count result))
-        (println (last result)))))
-;      (finally (close-database db)))))
+        (println (last result)))
+      (finally (close-database path)))))
 
 (defn compaction-test [path]
   (try
