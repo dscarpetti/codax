@@ -15,8 +15,9 @@
 
 ;;;;; Settings
 
-(def order 128)
-(def compaction-threshold 20000)
+(def order 256)
+(def cache-threshold 64)
+(def compaction-threshold 10000)
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 ;;;;; Databases
@@ -94,7 +95,7 @@
   (swap! data
          #(-> %
               (open-file-handles path)
-              (assoc :cache (cache/lru-cache-factory {} :threshold 32)
+              (assoc :cache (cache/lru-cache-factory {} :threshold cache-threshold)
                      :manifest manifest
                      :writes-since-compaction 0
                      :nodes-offset nodes-offset)))
