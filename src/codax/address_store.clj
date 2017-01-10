@@ -107,6 +107,63 @@
       (swap! open-databases assoc path db)
       db)))
 
+;;; Compaction
+
+(defn compact-manifest [path manifest root-id]
+  (let [compact-manifest-buffer (ByteBuffer/allocate (* 16 (+ 2 (count manifest))))
+        compact-manifest-channel (FileChannel/open (to-path (str path "/manifest_COMPACT")) (into-array [StandardOpenOption/CREATE_NEW
+                                                                                                         StandardOpenOption/WRITE
+                                                                                                         StandardOpenOption/SYNC]))]
+    (doto compact-manifest-buffer
+      (.putLong file-type-tag)
+      (.putInt file-version-tag)
+      (.putInt order))
+    (loop [remaining-manifest manifest]
+      (when-let [[id address] (first remaining-manifest)]
+        (doto compact-manifest-buffer
+          (.putLong id)
+          (.putLong address))
+        (recur (rest remaining-manifest))))
+    (doto compact-manifest-buffer
+      (.putLong 0)
+      (.putLong root-id)
+      (.flip))
+    (doto compact-manifest-channel
+      (.write compact-manifest-buffer)
+      (.close))))
+
+(defn compact-nodes [path manifest]
+  (let [nodes-channel (FileChannel/open (to-path (str path "/nodes")) (into-array [StandardOpenOption/READ]))
+        compact-nodes-channel (FileChannel/open (to-path (str path "/nodes_COMPACT")) (into-array [StandardOpenOption/CREATE_NEW
+                                                                                                   StandardOpenOption/APPEND]))]
+    (loop [address 0
+           new-manifest (transient [])
+           remaining-manifest manifest]
+      (if-let [[id original-address] (first remaining-manifest)]
+        (do
+          (.position nodes-channel original-address)
+          (let [size-buf (ByteBuffer/allocate 8)
+                _ (.read nodes-channel size-buf)
+                size (.getLong (.flip size-buf))]
+            (.write compact-nodes-channel (.flip size-buf))
+            (.transferFrom compact-nodes-channel nodes-channel (+ 8 address) size)
+            (recur (+ 8 size address)
+                   (conj! new-manifest [id address])
+                   (rest remaining-manifest))))
+        (do
+          (.write compact-nodes-channel (ByteBuffer/allocate 8)) ; 8 empty bytes indicate the end of a commit
+          (.force compact-nodes-channel true)
+          (.close compact-nodes-channel)
+          (.close nodes-channel)
+          (persistent! new-manifest))))))
+
+(defn compact-database [db]
+  (let [path (:path db)
+        {:keys [manifest root-id]} @(:data db)
+        new-manifest (compact-nodes path manifest)]
+    (println new-manifest)
+    (compact-manifest path new-manifest root-id)))
+
 ;;;;; Transactions
 
 (defn- update-database! [{:keys [db root-id id-counter manifest]} nodes-offset manifest-delta nodes-by-address]
@@ -145,8 +202,8 @@
         (let [all-nodes-buffer (ByteBuffer/allocate (+ 8 total-length))]
           (doseq [^ByteBuffer b node-buffers]
             (.put all-nodes-buffer (.array b)))
-          (.putLong all-nodes-buffer (long 0))
-          (.putLong manifest-buffer (long 0))
+          (.putLong all-nodes-buffer (long 0)) ;; 8 empty bytes indicate the end of a commit
+          (.putLong manifest-buffer (long 0)) ;; 8 empty bytes indicate the end of a commit
           (.putLong manifest-buffer (long (:root-id txn)))
           (save-buffers! (:db txn) manifest-buffer all-nodes-buffer)
           (update-database! txn (+ 8 address) manifest-delta nodes-by-address))
@@ -250,7 +307,6 @@
     ((:records leaf) k)))
 
 ;;; Seek
-
 
 (defn b+seek [txn start end & {:keys [limit]}]
   (let [root (get-node txn (:root-id txn))
@@ -564,3 +620,4 @@
         (println (count result))
         (println (last result)))
       (finally (close-database db)))))
+l
