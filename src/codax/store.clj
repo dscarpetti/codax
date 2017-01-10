@@ -101,6 +101,16 @@
                      :nodes-offset nodes-offset)))
   database)
 
+(defn close-database [path-or-db]
+  (let [path (if (string? path-or-db)
+               path-or-db
+               (:path path-or-db))]
+    (when-let [open-db (@open-databases path)]
+      (close-file-handles open-db)
+      (reset! (:data open-db) false)
+      (swap! open-databases dissoc path open-db)
+      true)))
+
 (defn open-database [path]
   (if-let [existing-db (@open-databases path)]
     (do (println "db already open" path)
@@ -116,16 +126,6 @@
       (initialize-database-data! db manifest nodes-offset)
       (swap! open-databases assoc path db)
       db)))
-
-(defn close-database [path-or-db]
-  (let [path (if (string? path-or-db)
-               path-or-db
-               (:path path-or-db))]
-    (when-let [open-db (@open-databases path)]
-      (close-file-handles open-db)
-      (reset! (:data open-db) false)
-      (swap! open-databases dissoc path open-db)
-      true)))
 
 ;;; Compaction
 
