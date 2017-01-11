@@ -2,6 +2,8 @@
   (:require
    [clojure.core.cache :as cache]
    [clojure.java.io :as io]
+   [clojure.java.shell :as shell]
+   [clojure.string :as str]
    [taoensso.nippy :as nippy])
   (:import
    [java.io RandomAccessFile]
@@ -15,6 +17,7 @@
 (def order 256)
 (def cache-threshold 64)
 (def compaction-threshold 10000)
+(def backup-compressor :bzip2) ;; set to nil to prevent backup creation
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 ;;;;; Databases
@@ -189,12 +192,36 @@
           {:new-manifest (persistent! new-manifest)
            :new-nodes-offset (+ 8 address)})))))
 
+(defn archive-files
+  "available compressors are  :gzip  :bzip2  :xz"
+  [dest files & {:keys [rm-files compressor] :or {compressor :gzip}}]
+  (let [[options extension] (condp = compressor
+                              :gzip ["-czf" ".tar.gz"]
+                              :bzip2 ["-cjf" ".tar.bz2"]
+                              :xz ["-cJf" ".tar.xz"])]
+    (if (zero? (:exit (apply shell/sh "tar" options (str dest extension) files)))
+      (if rm-files
+        (:exit (apply shell/sh "rm" files))
+        0)
+      (println "archive creation failed"))))
+
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
 (defn- move-compact-files [path]
-  (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
-  (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))
+  (if backup-compressor
+    (let [archive-timestamp (str "_" (System/currentTimeMillis))
+          archive-filename (str path "/backup" archive-timestamp)
+          temp-node-filename (str path "/nodes_ARCHIVE" archive-timestamp)
+          temp-manifest-filename (str path "/manifest_ARCHIVE" archive-timestamp)]
+      (move-file-atomically (str path "/nodes") temp-node-filename)
+      (move-file-atomically (str path "/manifest") temp-manifest-filename)
+      (future (archive-files archive-filename [temp-node-filename temp-manifest-filename]
+                             :compressor backup-compressor
+                             :rm-files true)))
+    (do
+      (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
+      (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))))
   (move-file-atomically (str path "/nodes_COMPACT") (str path "/nodes"))
   (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
