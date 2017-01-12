@@ -29,6 +29,9 @@
 (defn- to-path [str]
   (Paths/get str (make-array String 0)))
 
+(defn- to-canonical-path-string [str]
+  (.getCanonicalPath (io/as-file str)))
+
 (defn- read-manifest-buffer [^ByteBuffer buf]
   (.position buf 16)
   (loop [root-id 1
@@ -170,31 +173,31 @@
 
 (defn archive-files
   "available compressors are  :gzip  :bzip2  :xz"
-  [dest files & {:keys [rm-files compressor] :or {compressor :gzip}}]
-  (let [[options extension] (condp = compressor
-                              :gzip ["-czf" ".tar.gz"]
-                              :bzip2 ["-cjf" ".tar.bz2"]
-                              :xz ["-cJf" ".tar.xz"])]
-    (if (zero? (:exit (apply shell/sh "tar" options (str dest extension) files)))
-      (if rm-files
-        (:exit (apply shell/sh "rm" files))
-        0)
-      (println "archive creation failed"))))
+  [dir dest files & {:keys [rm-files compressor] :or {compressor :gzip}}]
+  (shell/with-sh-dir dir
+    (let [[options extension] (condp = compressor
+                                :gzip ["-czf" ".tar.gz"]
+                                :bzip2 ["-cjf" ".tar.bz2"]
+                                :xz ["-cJf" ".tar.xz"])]
+      (if (zero? (:exit (apply shell/sh "tar" options (str dest extension) files)))
+        (if rm-files
+          (:exit (apply shell/sh "rm" files))
+          0)
+        (println "archive creation failed")))))
 
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
 (defn- move-compact-files [path]
   (if backup-compressor
-    (let [archive-timestamp (str "_" (System/currentTimeMillis))
-          archive-filename (str path "/backup" archive-timestamp)
-          temp-node-filename (str path "/nodes_ARCHIVE" archive-timestamp)
-          temp-manifest-filename (str path "/manifest_ARCHIVE" archive-timestamp)]
-      (move-file-atomically (str path "/nodes") temp-node-filename)
-      (move-file-atomically (str path "/manifest") temp-manifest-filename)
-      (future (archive-files archive-filename [temp-node-filename temp-manifest-filename]
-                             :compressor backup-compressor
-                             :rm-files true)))
+    (let [timestamp-suffix (str "_" (System/currentTimeMillis))]
+      (move-file-atomically (str path "/nodes") (str path "/nodes" timestamp-suffix))
+      (move-file-atomically (str path "/manifest") (str path "/manifest" timestamp-suffix))
+      (future
+        (archive-files path (str "backup" timestamp-suffix)
+                       [(str "nodes" timestamp-suffix) (str "manifest" timestamp-suffix)]
+                       :compressor backup-compressor
+                       :rm-files true)))
     (do
       (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
       (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))))
@@ -232,9 +235,10 @@
 ;;; Open/Close
 
 (defn close-database [path-or-db]
-  (let [path (if (string? path-or-db)
-               path-or-db
-               (:path path-or-db))]
+  (let [path (to-canonical-path-string
+              (if (string? path-or-db)
+                path-or-db
+                (:path path-or-db)))]
     (when-let [open-db (@open-databases path)]
       (locking (:write-lock open-db)
         (with-compaction-lock [open-db]
@@ -246,20 +250,21 @@
       true)))
 
 (defn open-database [path]
-  (if-let [existing-db (@open-databases path)]
-    (do (close-database path)
-        (println "Database" path "re-opening.")
-        (open-database path))
-    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-          nodes-offset (load-nodes-offset path)
-          db {:path path
-              :write-lock (Object.)
-              :compaction-lock (ReentrantReadWriteLock. true)
-              :data (atom {:root-id root-id
-                           :id-counter id-counter})}]
-      (initialize-database-data! db manifest nodes-offset)
-      (swap! open-databases assoc path db)
-      db)))
+  (let [path (to-canonical-path-string path)]
+    (if-let [existing-db (@open-databases path)]
+      (do (close-database path)
+          (println "Database" path "re-opening.")
+          (open-database path))
+      (let [{:keys [root-id id-counter manifest]} (load-manifest path)
+            nodes-offset (load-nodes-offset path)
+            db {:path path
+                :write-lock (Object.)
+                :compaction-lock (ReentrantReadWriteLock. true)
+                :data (atom {:root-id root-id
+                             :id-counter id-counter})}]
+        (initialize-database-data! db manifest nodes-offset)
+        (swap! open-databases assoc path db)
+        db))))
 
 ;;;;; Transactions
 
@@ -543,7 +548,6 @@
      (-> txn
          (assoc-in [:dirty-nodes (:id left-node)] (assoc left-node :records (into (sorted-map) left-records)))
          (assoc-in [:dirty-nodes (:id right-node)] (assoc right-node :records (into (sorted-map) right-records))))}))
-
 
 (defn- merge-nodes [txn mid-key left-node right-node]
   (let [combined-records (combine-records mid-key left-node right-node)
