@@ -17,7 +17,6 @@
 (def order 256)
 (def cache-threshold 64)
 (def compaction-threshold 10000)
-(def backup-compressor :bzip2) ;; set to nil to prevent backup creation
 (def nippy-options {:compressor nippy/lz4-compressor})
 
 ;;;;; Databases
@@ -172,32 +171,37 @@
            :new-nodes-offset (+ 8 address)})))))
 
 (defn archive-files
-  "available compressors are  :gzip  :bzip2  :xz"
-  [dir dest files & {:keys [rm-files compressor] :or {compressor :gzip}}]
+  "available compressors are  :none  :gzip  :bzip2  :xz"
+  [dir dest files & {:keys [compressor] :or {compressor :gzip}}]
   (shell/with-sh-dir dir
     (let [[options extension] (condp = compressor
+                                :none ["-cf" ".tar"]
                                 :gzip ["-czf" ".tar.gz"]
                                 :bzip2 ["-cjf" ".tar.bz2"]
-                                :xz ["-cJf" ".tar.xz"])]
-      (if (zero? (:exit (apply shell/sh "tar" options (str dest extension) files)))
-        (if rm-files
-          (:exit (apply shell/sh "rm" files))
-          0)
-        (println "archive creation failed")))))
+                                :xz ["-cJf" ".tar.xz"])
+          archive-result (apply shell/sh "tar" options (str dest extension) files)
+          archive-path (to-canonical-path-string (str dir "/" dest extension))]
+      (if (not (zero? (:exit archive-result)))
+        (assoc archive-result :failure "tar")
+        (let [rm-result (apply shell/sh "rm" files)]
+          (if (not (zero? (:exit rm-result)))
+            (assoc rm-result :failure "rm" :archive-path archive-path)
+            {:archive-path archive-path}))))))
+
 
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
-(defn- move-compact-files [path]
+(defn- relocate-compact-files [path backup-compressor backup-fn]
   (if backup-compressor
     (let [timestamp-suffix (str "_" (System/currentTimeMillis))]
       (move-file-atomically (str path "/nodes") (str path "/nodes" timestamp-suffix))
       (move-file-atomically (str path "/manifest") (str path "/manifest" timestamp-suffix))
       (future
-        (archive-files path (str "backup" timestamp-suffix)
-                       [(str "nodes" timestamp-suffix) (str "manifest" timestamp-suffix)]
-                       :compressor backup-compressor
-                       :rm-files true)))
+        (backup-fn (archive-files path (str "backup" timestamp-suffix)
+                                  [(str "nodes" timestamp-suffix) (str "manifest" timestamp-suffix)]
+                                  :compressor backup-compressor))))
+
     (do
       (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
       (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))))
@@ -228,7 +232,7 @@
       (compact-manifest path new-manifest root-id)
       (with-compaction-lock [db]
         (close-file-handles db)
-        (move-compact-files path)
+        (relocate-compact-files path (:backup-compressor db) (:backup-fn db))
         (initialize-database-data! db new-manifest new-nodes-offset))
       true)))
 
@@ -249,15 +253,18 @@
             (println "Database" path "closed."))))
       true)))
 
-(defn open-database [path]
+(defn open-database [path & [backup-compressor backup-fn]]
+  (assert (contains? #{nil :none :gzip :bzip2 :xz} backup-compressor))
   (let [path (to-canonical-path-string path)]
     (if-let [existing-db (@open-databases path)]
       (do (close-database path)
           (println "Database" path "re-opening.")
-          (open-database path))
+          (open-database path backup-compressor backup-fn))
       (let [{:keys [root-id id-counter manifest]} (load-manifest path)
             nodes-offset (load-nodes-offset path)
             db {:path path
+                :backup-compressor backup-compressor
+                :backup-fn backup-fn
                 :write-lock (Object.)
                 :compaction-lock (ReentrantReadWriteLock. true)
                 :data (atom {:root-id root-id

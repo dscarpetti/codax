@@ -2,12 +2,38 @@
   (:require
    [codax.operations :as ops]
    [codax.prefix :refer [set-prefix prefix-path]]
-   [codax.store :as store]));; :refer [open-database list-all-databases close-database]]))
+   [codax.store :as store]))
 
-(defn open-database [filepath]
-  (store/open-database filepath))
+(defn open-database
+  "Opens a database at the given filepath. If a database is already open at the given path
+  it is closed and any objects pointing to it are invalidated. Attempts to use a closed or
+  invalidated database will throw an Exception.
 
-(defn close-database [filepath-or-db]
+  By default a set of files in the database directory with the suffix ARCHIVE are created or
+  overwritten on each compaction and represent the most recent pre-compaction state.
+
+  Alteratively timstamped backups can be created if a `:backup-compressor` argument is supplied.
+  compressor values are:
+
+  :none - create plain .tar files
+  :gzip - create gzip compressed .tar.gz files
+  :bzip2 - created bzip2 compressed .tar.bz2 files
+  :xz - created xz compressed .tar.xz files
+
+  NOTE: this functionality makes use of clojure.java.shell thus tar and/or the relevant compressor
+  must be installed on the system or the process will fail.
+
+  Once the backup archive is created (or fails to be created) if a `:backup-fn` is supplied it will
+  be called with the result. If creation of the tarball succeeded an `:archive-path` key will provide
+  the canonical file path to the new archive. If any part of the process fails a `:failure` key will
+  be present and an `:err` key will provide details about the failure."
+  [filepath & {:keys [backup-compressor backup-fn]}]
+  (store/open-database filepath backup-compressor backup-fn))
+
+(defn close-database
+  "Will close the database at the provided filepath (or the filepath of the a database map)
+  Attempts to use a closed or invalidated database will throw an Exception."
+  [filepath-or-db]
   (store/close-database filepath-or-db))
 
 (defn get-at

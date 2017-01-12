@@ -118,9 +118,10 @@ a long in nanoseconds."
         user-verification (repeatedly read-count #(fn [] (verify-user-data database (first (shuffle wordlist)))))
         all-users-verification (repeatedly verification-count #(fn [] (verify-all-users database)))]
     (shuffle (concat assoc-users put-users put-val-users user-verification dissoc-users all-users-verification))))
+                     ;;[#(do (close-database database) (codax.store/compact-database database))]))))
 
 (defn run-user-test [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]
-  (let [database (open-database "data/BENCH_user")]
+  (let [database (open-database "data/BENCH_user" :backup-compressor :bzip2 :backup-fn #(do (println) (println %) (println)))]
     (try
       (let [opset-1 (create-user-operation-set database writes reads verifications)
             opset-2 (create-user-operation-set database writes reads verifications)
