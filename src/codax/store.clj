@@ -101,33 +101,7 @@
                      :nodes-offset nodes-offset)))
   database)
 
-(defn close-database [path-or-db]
-  (let [path (if (string? path-or-db)
-               path-or-db
-               (:path path-or-db))]
-    (when-let [open-db (@open-databases path)]
-      (close-file-handles open-db)
-      (reset! (:data open-db) false)
-      (swap! open-databases dissoc path open-db)
-      true)))
-
-(defn open-database [path]
-  (if-let [existing-db (@open-databases path)]
-    (do (println "db already open" path)
-        (close-database path)
-        (open-database path))
-    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-          nodes-offset (load-nodes-offset path)
-          db {:path path
-              :write-lock (Object.)
-              :compaction-lock (ReentrantReadWriteLock. true)
-              :data (atom {:root-id root-id
-                           :id-counter id-counter})}]
-      (initialize-database-data! db manifest nodes-offset)
-      (swap! open-databases assoc path db)
-      db)))
-
-;;; Compaction
+;;; Locks
 
 (defmacro with-read-lock [[database] & body]
   `(let [^ReentrantReadWriteLock lock# (:compaction-lock ~database)]
@@ -142,6 +116,8 @@
      (try
        (do ~@body)
        (finally (.unlock (.writeLock lock#))))))
+
+;;; Compaction
 
 (defn- compact-manifest [path manifest root-id]
   (let [compact-manifest-buffer (ByteBuffer/allocate (* 16 (+ 2 (count manifest))))
@@ -243,7 +219,8 @@
 
   (locking (:write-lock db)
     (let [path (:path db)
-          {:keys [manifest root-id]} @(:data db)
+          {:keys [manifest root-id is-closed]} @(:data db)
+          _ (when is-closed (throw (Exception. "Database Closed.")))
           {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
       (compact-manifest path new-manifest root-id)
       (with-compaction-lock [db]
@@ -251,6 +228,38 @@
         (move-compact-files path)
         (initialize-database-data! db new-manifest new-nodes-offset))
       true)))
+
+;;; Open/Close
+
+(defn close-database [path-or-db]
+  (let [path (if (string? path-or-db)
+               path-or-db
+               (:path path-or-db))]
+    (when-let [open-db (@open-databases path)]
+      (locking (:write-lock open-db)
+        (with-compaction-lock [open-db]
+          (when (not (:is-closed @(:data open-db)))
+            (close-file-handles open-db)
+            (reset! (:data open-db) {:is-closed true})
+            (swap! open-databases dissoc path open-db)
+            (println "Database" path "closed."))))
+      true)))
+
+(defn open-database [path]
+  (if-let [existing-db (@open-databases path)]
+    (do (close-database path)
+        (println "Database" path "re-opening.")
+        (open-database path))
+    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
+          nodes-offset (load-nodes-offset path)
+          db {:path path
+              :write-lock (Object.)
+              :compaction-lock (ReentrantReadWriteLock. true)
+              :data (atom {:root-id root-id
+                           :id-counter id-counter})}]
+      (initialize-database-data! db manifest nodes-offset)
+      (swap! open-databases assoc path db)
+      db)))
 
 ;;;;; Transactions
 
@@ -319,7 +328,8 @@
 
 
 (defn make-transaction [database]
-  (let [{:keys [manifest root-id id-counter nodes-offset]} @(:data database)]
+  (let [{:keys [manifest root-id id-counter nodes-offset is-closed]} @(:data database)]
+    (when is-closed (throw (Exception. "Database Closed.")))
     {:db database
      :root-id root-id
      :id-counter id-counter
