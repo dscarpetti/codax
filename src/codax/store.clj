@@ -216,8 +216,7 @@
           (when (not (:is-closed @(:data open-db)))
             (close-file-handles open-db)
             (reset! (:data open-db) {:is-closed true})
-            (swap! open-databases dissoc path open-db)
-            (println "Database" path "closed."))))
+            (swap! open-databases dissoc path open-db))))
       true)))
 
 (defn destroy-database
