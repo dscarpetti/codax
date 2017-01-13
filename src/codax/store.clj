@@ -4,8 +4,6 @@
    [clj-time.format :as format-time]
    [clojure.core.cache :as cache]
    [clojure.java.io :as io]
-   [clojure.java.shell :as shell]
-   [clojure.string :as str]
    [taoensso.nippy :as nippy])
   (:import
    [java.io RandomAccessFile]
@@ -172,39 +170,20 @@
           {:new-manifest (persistent! new-manifest)
            :new-nodes-offset (+ 8 address)})))))
 
-(defn archive-files
-  "available compressors are  :none  :gzip  :bzip2  :xz"
-  [dir dest files & {:keys [compressor] :or {compressor :gzip}}]
-  (shell/with-sh-dir dir
-    (let [[options extension] (condp = compressor
-                                :none ["-cf" ".tar"]
-                                :gzip ["-czf" ".tar.gz"]
-                                :bzip2 ["-cjf" ".tar.bz2"]
-                                :xz ["-cJf" ".tar.xz"])
-          archive-result (apply shell/sh "tar" options (str dest extension) files)
-          archive-path (to-canonical-path-string (str dir "/" dest extension))]
-      (if (not (zero? (:exit archive-result)))
-        (assoc archive-result :failure "tar")
-        (let [rm-result (apply shell/sh "rm" files)]
-          (if (not (zero? (:exit rm-result)))
-            (assoc rm-result :failure "rm" :archive-path archive-path)
-            {:archive-path archive-path}))))))
-
-
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
 (def ts-formatter (format-time/formatters :basic-date-time-no-ms))
 
-(defn- relocate-compact-files [path backup-compressor backup-fn]
-  (if backup-compressor
+(defn- relocate-compact-files [path backup-fn]
+  (if backup-fn
     (let [ts-suffix (str "_" (format-time/unparse ts-formatter (time/now)) "_" (System/nanoTime))]
       (move-file-atomically (str path "/nodes") (str path "/nodes" ts-suffix))
       (move-file-atomically (str path "/manifest") (str path "/manifest" ts-suffix))
-      (future
-        (backup-fn (archive-files path (str "backup" ts-suffix)
-                                  [(str "nodes" ts-suffix) (str "manifest" ts-suffix)]
-                                  :compressor backup-compressor))))
+      (future (backup-fn {:dir path
+                          :suffix ts-suffix
+                          :file-names [(str "nodes" ts-suffix) (str "manifest" ts-suffix)]})))
+
     (do
       (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
       (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))))
@@ -220,7 +199,7 @@
       (compact-manifest path new-manifest root-id)
       (with-compaction-lock [db]
         (close-file-handles db)
-        (relocate-compact-files path (:backup-compressor db) (:backup-fn db))
+        (relocate-compact-files path (:backup-fn db))
         (initialize-database-data! db new-manifest new-nodes-offset))
       true)))
 
@@ -241,15 +220,13 @@
             (println "Database" path "closed."))))
       true)))
 
-(defn open-database [path & [backup-compressor backup-fn]]
-  (assert (contains? #{nil :none :gzip :bzip2 :xz} backup-compressor))
+(defn open-database [path & [backup-fn]]
   (let [path (to-canonical-path-string path)]
     (when (@open-databases path)
       (throw (Exception. (str "Database already open at "  path))))
     (let [{:keys [root-id id-counter manifest]} (load-manifest path)
           nodes-offset (load-nodes-offset path)
           db {:path path
-              :backup-compressor backup-compressor
               :backup-fn backup-fn
               :write-lock (Object.)
               :compaction-lock (ReentrantReadWriteLock. true)

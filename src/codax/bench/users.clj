@@ -1,6 +1,7 @@
 (ns codax.bench.users
   (:require
    [clojure.string :as str]
+   [codax.backup :refer [make-backup-archiver]]
    [codax.bench.wordlist :refer [wordlist]]
    [codax.core :refer :all]
    [codax.swaps :refer :all]))
@@ -121,7 +122,8 @@ a long in nanoseconds."
                      ;;[#(do (close-database database) (codax.store/compact-database database))]))))
 
 (defn run-user-test [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]
-  (let [database (open-database "data/BENCH_user" :backup-compressor :bzip2 :backup-fn #(do (println) (println %) (println)))]
+  (let [backup-archiver (make-backup-archiver :bzip2 #(do (println) (println %) (println)))
+        database (open-database "data/BENCH_user" :backup-fn backup-archiver)]
     (try
       (let [opset-1 (create-user-operation-set database writes reads verifications)
             opset-2 (create-user-operation-set database writes reads verifications)

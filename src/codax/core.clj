@@ -11,23 +11,18 @@
   By default a set of files in the database directory with the suffix ARCHIVE are created or
   overwritten on each compaction and represent the most recent pre-compaction state.
 
-  Alteratively timstamped backups can be created if a `:backup-compressor` argument is supplied.
-  compressor values are:
+  Alteratively, timestamped archives will be created if a `:backup-fn` argument is supplied.
+  Once the timestamped archive-files are created, the `:backup-fn` function will be called
+  (in a future) with a map containing the following keys:
 
-  :none - create plain .tar files
-  :gzip - create gzip compressed .tar.gz files
-  :bzip2 - created bzip2 compressed .tar.bz2 files
-  :xz - created xz compressed .tar.xz files
+  :dir ; a string representing the full path to the database directory
+  :suffix ; a string of the timestamp suffix attached to the files
+  :file-names ; a vector of strings representing the generated file names
 
-  NOTE: this functionality makes use of clojure.java.shell thus tar and/or the relevant compressor
-  must be installed on the system or the process will fail.
-
-  Once the backup archive is created (or fails to be created) if a `:backup-fn` is supplied it will
-  be called with the result. If creation of the tarball succeeded an `:archive-path` key will provide
-  the canonical file path to the new archive. If any part of the process fails a `:failure` key will
-  be present and an `:err` key will provide details about the failure."
-  [filepath & {:keys [backup-compressor backup-fn]}]
-  (store/open-database filepath backup-compressor backup-fn))
+  (see codax.backup/make-backup-archiver)
+  "
+  [filepath & {:keys [backup-fn]}]
+  (store/open-database filepath backup-fn))
 
 (defn close-database
   "Will close the database at the provided filepath (or the filepath of the a database map)
