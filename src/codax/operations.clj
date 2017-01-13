@@ -81,11 +81,10 @@
   [tx path]
   (get-in (reduce reduce-assoc {} (seek tx path)) path))
 
-
 (defn- del-path [tx path]
   (reduce (fn [tx raw-key] (store/b+remove tx raw-key))
           tx
-          (seek tx path path :keys-only true :no-decode true)))
+          (seek tx path path :only-keys true :no-decode true)))
 
 (defn- assoc-helper [tx path x]
   (if (map? x)
