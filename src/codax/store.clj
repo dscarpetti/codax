@@ -1,5 +1,7 @@
 (ns codax.store
   (:require
+   [clj-time.core :as time]
+   [clj-time.format :as format-time]
    [clojure.core.cache :as cache]
    [clojure.java.io :as io]
    [clojure.java.shell :as shell]
@@ -192,14 +194,16 @@
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
+(def ts-formatter (format-time/formatters :basic-date-time-no-ms))
+
 (defn- relocate-compact-files [path backup-compressor backup-fn]
   (if backup-compressor
-    (let [timestamp-suffix (str "_" (System/currentTimeMillis))]
-      (move-file-atomically (str path "/nodes") (str path "/nodes" timestamp-suffix))
-      (move-file-atomically (str path "/manifest") (str path "/manifest" timestamp-suffix))
+    (let [ts-suffix (str "_" (format-time/unparse ts-formatter (time/now)) "_" (System/nanoTime))]
+      (move-file-atomically (str path "/nodes") (str path "/nodes" ts-suffix))
+      (move-file-atomically (str path "/manifest") (str path "/manifest" ts-suffix))
       (future
-        (backup-fn (archive-files path (str "backup" timestamp-suffix)
-                                  [(str "nodes" timestamp-suffix) (str "manifest" timestamp-suffix)]
+        (backup-fn (archive-files path (str "backup" ts-suffix)
+                                  [(str "nodes" ts-suffix) (str "manifest" ts-suffix)]
                                   :compressor backup-compressor))))
     (do
       (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
