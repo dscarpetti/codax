@@ -220,18 +220,26 @@
             (println "Database" path "closed."))))
       true)))
 
-(defn destroy-database [path-or-db]
+(defn destroy-database
+  "Removes database files and generic archive files.
+  If there is nothing else in the database directory, it is also removed."
+  [path-or-db]
   (close-database path-or-db)
   (let [path (to-canonical-path-string
               (if (string? path-or-db)
                 path-or-db
                 (:path path-or-db)))
+        directory (io/as-file path)
         nodes-file (io/as-file (str path "/nodes"))
-        manifest-file (io/as-file (str path "/manifest"))]
-    (when (.exists nodes-file)
-      (io/delete-file nodes-file))
-    (when (.exists manifest-file)
-      (io/delete-file manifest-file))))
+        manifest-file (io/as-file (str path "/manifest"))
+        nodes-archive-file (io/as-file (str path "/nodes_ARCHIVE"))
+        manifest-archive-file (io/as-file (str path "/manifest_ARCHIVE"))]
+    (when (.exists nodes-file) (io/delete-file nodes-file))
+    (when (.exists manifest-file) (io/delete-file manifest-file))
+    (when (.exists nodes-archive-file) (io/delete-file nodes-archive-file))
+    (when (.exists manifest-archive-file) (io/delete-file manifest-archive-file))
+    (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
+      (io/delete-file directory))))
 
 (defn open-database [path & [backup-fn]]
   (let [path (to-canonical-path-string path)]
