@@ -1,7 +1,8 @@
 (ns codax.core-test
   (:require [clojure.test :refer :all]
             [codax.core :refer :all]
-            [codax.store :refer [destroy-database]]))
+            [codax.store :refer [destroy-database]]
+            [codax.swaps :refer :all]))
 
 (def ^:dynamic *testing-database* nil)
 
@@ -250,3 +251,19 @@
              "Sam" {:name "Sammy"
                     :title "Sir"
                     :profession "Go"}}}))
+
+(defn increment-path [db]
+  (with-write-transaction [db tx]
+    (update-at tx [:metrics :user-counts :all] inc-count)))
+
+(defn increment-test [db n]
+  (let [database db
+        ops (repeat n #(increment-path database))]
+    (doall (pmap #(%) ops))
+    (is (=
+         n
+         (with-read-transaction [database tx]
+           (get-at tx [:metrics :user-counts :all]))))))
+
+(deftest inc-test
+  (increment-test *testing-database* 1000))

@@ -144,15 +144,3 @@ a long in nanoseconds."
          :stats total-time
          :cache (not no-cache)})
       (finally (close-database "test-databases/BENCH_user")))))
-
-(defn increment-path [db]
-  (with-write-transaction [db tx]
-    (update-val tx [:metrics :user-counts :all] inc-count)))
-
-(defn increment-test [n]
-  (open-database "data/inc_test")
-  (let [database (open-database "data/inc_test")
-        ops (repeat n #(increment-path database))]
-    (doall (pmap #(%) ops))
-    (with-read-transaction [database tx]
-      (get-at tx [:metrics :user-counts :all]))))
