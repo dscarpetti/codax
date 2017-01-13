@@ -123,7 +123,7 @@ a long in nanoseconds."
 
 (defn run-user-test [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]
   (let [backup-archiver (make-backup-archiver :bzip2 #(do (println) (println %) (println)))
-        database (open-database "data/BENCH_user" :backup-fn backup-archiver)]
+        database (open-database "test-databases/BENCH_user" :backup-fn backup-archiver)]
     (try
       (let [opset-1 (create-user-operation-set database writes reads verifications)
             opset-2 (create-user-operation-set database writes reads verifications)
@@ -143,7 +143,7 @@ a long in nanoseconds."
         {:clock-time (/ (- stop-time start-time) 1000000000.0)
          :stats total-time
          :cache (not no-cache)})
-      (finally (close-database "data/BENCH_user")))))
+      (finally (close-database "test-databases/BENCH_user")))))
 
 (defn increment-path [db]
   (with-write-transaction [db tx]
