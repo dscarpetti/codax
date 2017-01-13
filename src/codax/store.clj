@@ -280,7 +280,7 @@
                         :nodes-offset nodes-offset)
                  (update :manifest merge manifest-delta)))))
   (when (<= compaction-threshold (:writes-since-compaction @(:data db)))
-    (time (compact-database db))))
+    (compact-database db)))
 
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (let [data @(:data db)
