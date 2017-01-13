@@ -27,7 +27,7 @@
 (defn make-backup-archiver
   "This returns a function for use as a :backup-fn function to an open database. It takes the
   generated files and bundles them into a tarball, optionally compressed, named
-  \"backup_<iso8601 timestamp>_<nanoTime unique value>. It then calls the provided
+  \"backup_<iso8601 timestamp>_<nanoTime unique value>\". It then calls the provided
   callback.
 
   Valid compressor values are:
