@@ -3,7 +3,6 @@
    [codax.store :as store]
    [codax.pathwise :as pathwise]))
 
-
 (defn get-val [tx path]
   (store/b+get tx (pathwise/encode path)))
 
@@ -21,35 +20,27 @@
 
 (defn seek
   ([tx] (seek tx nil nil))
-  ([tx full-path] (seek tx full-path full-path))
-  ([tx full-start-path full-end-path & {:keys [limit reverse keys-only no-decode]}]
-   (let [start (if (empty? full-start-path)
+  ([tx path] (seek tx path path))
+  ([tx start-path end-path & {:keys [limit no-decode only-keys only-vals partial]}]
+   (let [order-char (if partial nil (char 0x00))
+         start (if (empty? start-path)
                  (str (char 0x00))
-                 (str (pathwise/partially-encode full-start-path) (char 0x00)))
-         end (if (empty? full-end-path)
+                 (str (pathwise/partially-encode start-path) order-char))
+         end (if (empty? end-path)
                (str (char 0xff))
-               (str (pathwise/partially-encode full-end-path) (char 0x00) (char 0xff)))
-         results (store/b+seek tx start end :limit limit :reverse reverse)]
+               (str (pathwise/partially-encode end-path) order-char (char 0xff)))
+         results (store/b+seek tx start end :limit limit)]
      (cond
-       (and no-decode keys-only) (map first results)
+       (and no-decode only-keys) (map first results)
        no-decode results
-       keys-only (map #(pathwise/decode (first %)) results)
+       only-keys (map #(pathwise/decode (first %)) results)
+       only-vals (map second results)
        :else (map #(update % 0 pathwise/decode) results)))))
 
 (defn- reduce-assoc [coll [k v]]
   (if (not (vector? k))
     coll
     (assoc-in coll k v)))
-
-(defn- complete-collection [tx full-path coll]
-  (get-in
-   (if (:write tx)
-     (let [path-length (.length full-path)]
-       (reduce reduce-assoc
-               coll
-               (filter (fn [[k v]] (= full-path (take path-length k))) (:puts tx))))
-     coll)
-   full-path))
 
 (defn collect
   "Returns a map assembled from the keys beginning with the
@@ -87,8 +78,8 @@
   (seek tx [:biology]) -> {:chloe 3
                            :daniel 4
                            :ellen 5}}"
-  [tx full-path]
-  (complete-collection tx full-path (reduce reduce-assoc {} (seek tx full-path))))
+  [tx path]
+  (get-in (reduce reduce-assoc {} (seek tx path)) path))
 
 
 (defn- del-path [tx path]
@@ -108,8 +99,7 @@
 
 (defn- collect-delete [tx path]
   (let [values (seek tx path path :no-decode true)]
-    {:original (complete-collection tx path
-                                    (reduce reduce-assoc {} (map #(update % 0 pathwise/decode) values)))
+    {:original (get-in (reduce reduce-assoc {} (map #(update % 0 pathwise/decode) values)) path)
      :tx (reduce (fn [t [raw-key _]] (store/b+remove tx raw-key)) tx values)}))
 
 (defn update-map [tx path f & args]
@@ -132,5 +122,3 @@
   (let [original (collect tx path)
         updated (apply f original args)]
     (put-map tx path updated)))
-
-(defn search [tx path & {:keys [to-suffix limit reverse partial]}])
