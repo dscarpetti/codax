@@ -1,15 +1,15 @@
 (ns codax.core-test
   (:require [clojure.test :refer :all]
             [codax.core :refer :all]
-            [codax.store :refer [open-database destroy-database]]))
+            [codax.store :refer [destroy-database]]))
 
 (def ^:dynamic *testing-database* nil)
 
 (defn store-setup-and-teardown [f]
-  (binding [*testing-database* (open-database "test_database_with_a_unique_name")]
+  (binding [*testing-database* (open-database "test-databases/core")]
                                         ;(println "SETUP")
     (f))
-  (destroy-database "test_database_with_a_unique_name"))
+  (destroy-database "test-databases/core"))
 
 (use-fixtures :each store-setup-and-teardown)
 
@@ -250,4 +250,3 @@
              "Sam" {:name "Sammy"
                     :title "Sir"
                     :profession "Go"}}}))
-
