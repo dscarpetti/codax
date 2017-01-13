@@ -203,7 +203,7 @@
         (initialize-database-data! db new-manifest new-nodes-offset))
       true)))
 
-;;; Open/Close
+;;; Open/Close/Destroy
 
 (defn close-database [path-or-db]
   (let [path (to-canonical-path-string
@@ -219,6 +219,19 @@
             (swap! open-databases dissoc path open-db)
             (println "Database" path "closed."))))
       true)))
+
+(defn destroy-database [path-or-db]
+  (close-database path-or-db)
+  (let [path (to-canonical-path-string
+              (if (string? path-or-db)
+                path-or-db
+                (:path path-or-db)))
+        nodes-file (io/as-file (str path "/nodes"))
+        manifest-file (io/as-file (str path "/manifest"))]
+    (when (.exists nodes-file)
+      (io/delete-file nodes-file))
+    (when (.exists manifest-file)
+      (io/delete-file manifest-file))))
 
 (defn open-database [path & [backup-fn]]
   (let [path (to-canonical-path-string path)]
