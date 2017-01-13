@@ -14,7 +14,7 @@ a long in nanoseconds."
           result# (do ~@forms)]
        [~name result# (- (System/nanoTime) start#)])))
 
-(defn assoc-user [db user-id]
+(defn- assoc-user [db user-id]
   (bench
    "assoc user"
    (let [;;user-id (str user-id (int (rand 10000)))
@@ -33,7 +33,7 @@ a long in nanoseconds."
          (assoc-at tx [:users user-id] user)))
      user-id)))
 
-(defn put-user [db user-id]
+(defn- put-user [db user-id]
   (bench
    "put user"
    (let [;;user-id (str user-id (int (rand 10000)))
@@ -52,7 +52,7 @@ a long in nanoseconds."
          (put tx [:users user-id] user)))
      user-id)))
 
-(defn put-val-user [db user-id]
+(defn- put-val-user [db user-id]
   (bench
    "put val user"
    (let [user-id user-id];;(str user-id (int (rand 10000)))]
@@ -69,7 +69,7 @@ a long in nanoseconds."
              (put-val [:users user-id :test-keyset] (set (map str user-id))))))
      user-id)))
 
-(defn dissoc-user [db user-id]
+(defn- dissoc-user [db user-id]
   (bench
    "delete user"
    (let [user-existed (with-read-transaction [db tx] (get-val tx [:users user-id :id]))]
@@ -80,7 +80,7 @@ a long in nanoseconds."
              (update-at [:metrics :user-counts :starts-with (str (first user-id))] dec-count)
              (dissoc-at [:users user-id])))))))
 
-(defn verify-user-data [db user-id]
+(defn- verify-user-data [db user-id]
   (bench
    "verify user"
    (with-read-transaction [db tx]
@@ -90,7 +90,7 @@ a long in nanoseconds."
            (throw (Exception. (str user-id ": user keys/keyset mismatch " user)))))
        [user-id (if (nil? user) "user not found" "user found")]))))
 
-(defn verify-all-users [db]
+(defn- verify-all-users [db]
   (bench
    "verify all users"
    (with-read-transaction [db tx]
@@ -100,7 +100,7 @@ a long in nanoseconds."
        (if (and all-user-count (not (= (count users) all-user-count)))
          (throw (Exception. (str "count mismatch: " (count users) " " all-user-count "\n"))))))))
 
-(defn compute-times [x]
+(defn- compute-times [x]
   (into {}
         (map (fn [[type content]]
          (let [op-count (count content)
@@ -110,7 +110,7 @@ a long in nanoseconds."
                   :ops-per-second (/ op-count total-time)}]))
        x)))
 
-(defn create-user-operation-set [database write-count read-count verification-count]
+(defn- create-user-operation-set [database write-count read-count verification-count]
   (let [wordlist (take (* 4 write-count) wordlist)
         assoc-users (doall (map (fn [word] #(assoc-user database word)) (take write-count (shuffle wordlist))))
         put-users (doall (map (fn [word] #(put-user database word)) (take write-count (shuffle wordlist))))
