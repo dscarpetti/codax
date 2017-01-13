@@ -370,13 +370,9 @@
               loaded-node))))))
 
 (defn get-node [txn id]
-  (try
-    (or
-     ((:dirty-nodes txn) id)
-     (load-node txn id))
-    (catch Exception e
-      (println txn)
-      (throw e))))
+  (or
+   ((:dirty-nodes txn) id)
+   (load-node txn id)))
 
 ;;;;; B+Tree
 
