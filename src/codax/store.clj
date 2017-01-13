@@ -576,17 +576,20 @@
 
 (defn b+remove [txn k]
   (let [root-id (:root-id txn)
-        root (get-node txn (:root-id txn))
-        result (if (leaf-node? root)
-                 (remove-leaf txn root k)
-                 (remove-internal txn root k))]
-    (if (:combine result)
-      (let [txn (:txn result)
-            node (:combine result)]
-        (if (= 1 (count (:records node)))
-          (let [new-root-id (second (first (:records node)))]
-            (-> txn
-                (assoc :root-id new-root-id)
-                (assoc-in [:dirty-nodes root-id] nil)))
-          (assoc-in txn [:dirty-nodes (:id node)] node)))
-      result)))
+        root (get-node txn (:root-id txn))]
+    (if (leaf-node? root)
+      (let [result (remove-leaf txn root k)]
+        (if (:combine result)
+          (assoc-in (:txn result) [:dirty-nodes root-id] (:combine result))
+          result))
+      (let [result (remove-internal txn root k)]
+        (if (:combine result)
+          (let [txn (:txn result)
+                node (:combine result)]
+            (if (= 1 (count (:records node)))
+              (let [new-root-id (second (first (:records node)))]
+                (-> txn
+                    (assoc :root-id new-root-id)
+                    (assoc-in [:dirty-nodes root-id] nil)))
+              (assoc-in txn [:dirty-nodes (:id node)] node)))
+          result)))))
