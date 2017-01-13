@@ -6,8 +6,7 @@
 
 (defn open-database
   "Opens a database at the given filepath. If a database is already open at the given path
-  it is closed and any objects pointing to it are invalidated. Attempts to use a closed or
-  invalidated database will throw an Exception.
+  an Exception is thrown.
 
   By default a set of files in the database directory with the suffix ARCHIVE are created or
   overwritten on each compaction and represent the most recent pre-compaction state.

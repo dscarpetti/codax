@@ -240,22 +240,20 @@
 (defn open-database [path & [backup-compressor backup-fn]]
   (assert (contains? #{nil :none :gzip :bzip2 :xz} backup-compressor))
   (let [path (to-canonical-path-string path)]
-    (if-let [existing-db (@open-databases path)]
-      (do (close-database path)
-          (println "Database" path "re-opening.")
-          (open-database path backup-compressor backup-fn))
-      (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-            nodes-offset (load-nodes-offset path)
-            db {:path path
-                :backup-compressor backup-compressor
-                :backup-fn backup-fn
-                :write-lock (Object.)
-                :compaction-lock (ReentrantReadWriteLock. true)
-                :data (atom {:root-id root-id
-                             :id-counter id-counter})}]
-        (initialize-database-data! db manifest nodes-offset)
-        (swap! open-databases assoc path db)
-        db))))
+    (when (@open-databases path)
+      (throw (Exception. (str "Database already open at "  path))))
+    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
+          nodes-offset (load-nodes-offset path)
+          db {:path path
+              :backup-compressor backup-compressor
+              :backup-fn backup-fn
+              :write-lock (Object.)
+              :compaction-lock (ReentrantReadWriteLock. true)
+              :data (atom {:root-id root-id
+                           :id-counter id-counter})}]
+      (initialize-database-data! db manifest nodes-offset)
+      (swap! open-databases assoc path db)
+      db)))
 
 ;;;;; Transactions
 
