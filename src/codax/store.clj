@@ -201,29 +201,13 @@
         (backup-fn (archive-files path (str "backup" timestamp-suffix)
                                   [(str "nodes" timestamp-suffix) (str "manifest" timestamp-suffix)]
                                   :compressor backup-compressor))))
-
     (do
       (move-file-atomically (str path "/nodes") (str path "/nodes_ARCHIVE"))
       (move-file-atomically (str path "/manifest") (str path "/manifest_ARCHIVE"))))
   (move-file-atomically (str path "/nodes_COMPACT") (str path "/nodes"))
   (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
-(def last-compaction (atom (System/currentTimeMillis)))
-(def compaction-number (atom 0))
-
-(defn pad-num [n]
-  (let [s (str "       " n)]
-    (subs s (- (count s) 7))))
-
 (defn compact-database [db]
-  (let [previous-time @last-compaction
-        current-time (reset! last-compaction (System/currentTimeMillis))
-        elapsed-seconds (/ (- current-time previous-time) 1000)
-        compaction-count (swap! compaction-number inc)]
-    (println "       records count    "    (pad-num (* compaction-threshold compaction-count))
-             "       ops/sec    " (pad-num (int (/ compaction-threshold elapsed-seconds)))
-             "       elapsed secs    " (pad-num (int elapsed-seconds))))
-
   (locking (:write-lock db)
     (let [path (:path db)
           {:keys [manifest root-id is-closed]} @(:data db)
@@ -373,9 +357,6 @@
       (.read file data)
       (nippy/thaw data nippy-options))))
 
-;;(def cache-misses (atom 0))
-;;(def cache-hits (atom 0))
-
 (defn- load-node [{:keys [db manifest]} id]
   (let [address (manifest id)]
     (if (nil? address)
@@ -387,11 +368,9 @@
           (if (cache/has? cache address)
             (do
               (swap! (:data db) assoc :cache (cache/hit cache address))
-              ;;(swap! cache-hits inc)
               (cache/lookup cache address))
             (let [loaded-node (read-node-from-file (:file-reader data) address)]
               (swap! (:data db) assoc :cache (cache/miss cache address loaded-node))
-              ;;(swap! cache-misses inc)
               loaded-node))))))
 
 (defn get-node [txn id]
@@ -402,7 +381,6 @@
     (catch Exception e
       (println txn)
       (throw e))))
-
 
 ;;;;; B+Tree
 
