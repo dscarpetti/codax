@@ -121,7 +121,7 @@ a long in nanoseconds."
     (shuffle (concat assoc-users put-users put-val-users user-verification dissoc-users all-users-verification))))
                      ;;[#(do (close-database database) (codax.store/compact-database database))]))))
 
-(defn run-user-test [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]
+(defn run-user-benchmark [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]
   (let [backup-archiver (make-backup-archiver :bzip2 #(do (println) (println %) (println)))
         database (open-database "test-databases/BENCH_user" :backup-fn backup-archiver)]
     (try
