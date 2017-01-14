@@ -2,7 +2,8 @@
   (:require
    [codax.operations :as ops]
    [codax.prefix :refer [set-prefix prefix-path]]
-   [codax.store :as store]))
+   [codax.store :as store])
+  (:gen-class))
 
 (defn open-database
   "Opens a database at the given filepath. If a database is already open at the given path
@@ -142,3 +143,12 @@
   [db path]
   (with-write-transaction [db tx]
     (dissoc-at tx path)))
+
+;;;; Main
+
+(defn -main []
+  (clojure.main/repl
+   :init (fn []
+           (in-ns 'codax.core)
+           (require [clojure.repl :refer :all]
+                    [clojure.pprint :refer [pprint]]))))
