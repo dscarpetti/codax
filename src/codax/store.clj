@@ -49,7 +49,9 @@
 (defn- load-manifest [path]
   (let [dir (io/as-file path)]
     (when (and (.exists dir) (not (.isDirectory dir)))
-      (throw (ex-info "Invalid Database" {:cause :not-a-directory :path path})))
+      (throw (ex-info "Invalid Database" {:cause :not-a-directory
+                                          :message "Valid databases are directories."
+                                          :path path})))
     (when (not (.exists dir))
       (io/make-parents (str path "/files")))
     (let [manifest-file (RandomAccessFile. (str path "/manifest") "rw")]
@@ -60,13 +62,16 @@
                 file-version-int (.readInt manifest-file)
                 order-int (.readInt manifest-file)]
             (when (not (= file-type-long file-type-tag))
-              (throw (ex-info "Invalid Database" {:cause :file-type-mismatch})))
+              (throw (ex-info "Invalid Database" {:cause :file-type-mismatch
+                                                  :message "The manifest file is from another program or has been corrupted."})))
             (when (not (= file-version-int file-version-tag))
               (throw (ex-info "Incompatible Database" {:cause :version-mismatch
+                                                       :message "This database was created with an incompatible version."
                                                        :system-version file-version-tag
                                                        :file-version file-version-int})))
             (when (not (= order-int order))
               (throw (ex-info "Incompatible Database" {:cause :order-mismatch
+                                                       :message "This database was created with a different node size."
                                                        :system-order order
                                                        :file-order order-int}))))
           (do
@@ -197,8 +202,8 @@
   (locking (:write-lock db)
     (let [path (:path db)
           {:keys [manifest root-id is-closed]} @(:data db)
-          _ (when is-closed (throw (ex-info "Database Closed" {:cause :database-closed
-                                                               :details "The database object has been invalidated."
+          _ (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-compaction
+                                                               :message "The database object has been invalidated."
                                                                :path (:path db)})))
           {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
       (compact-manifest path new-manifest root-id)
@@ -249,7 +254,7 @@
   (let [path (to-canonical-path-string path)]
     (when (@open-databases path)
       (throw (ex-info "Database Already Open" {:cause :database-open
-                                               :details "The database at this path is already open."
+                                               :message "The database at this path is already open."
                                                :path path})))
     (let [{:keys [root-id id-counter manifest]} (load-manifest path)
           nodes-offset (load-nodes-offset path)
@@ -329,8 +334,8 @@
 
 (defn make-transaction [database]
   (let [{:keys [manifest root-id id-counter nodes-offset is-closed]} @(:data database)]
-    (when is-closed (throw (ex-info "Database Closed" {:cause :database-closed
-                                                       :details "The database object has been invalidated."
+    (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-transaction
+                                                       :message "The database object has been invalidated."
                                                        :path (:path database)})))
     {:db database
      :root-id root-id
