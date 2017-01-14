@@ -24,7 +24,7 @@
              (format-nano-interval total-open-time)))
 
 (defn- assoc-user [db user-id]
-  (let [user-id (str user-id (int (rand 10000)))
+  (let [user-id (str user-id (int (rand 1000)))
         timestamp (System/nanoTime)
         test-keys (reduce #(assoc %1 (str %2) (str %2)) {} user-id)
         user {:id user-id
@@ -39,15 +39,12 @@
                      (update-at [:metrics :user-counts :starts-with (str (first user-id))] inc-count)))]
         (assoc-at tx [:users user-id] user)))))
 
-(defn- dissoc-user [db user-id]
-  (let [user-id (str user-id (int (rand 10000)))
-        user-existed (with-read-transaction [db tx] (get-at tx [:users user-id :id]))]
-    (if user-existed
-      (with-write-transaction [db tx]
-        (-> tx
-            (update-at [:metrics :user-counts :all] dec-count)
-            (update-at [:metrics :user-counts :starts-with (str (first user-id))] dec-count)
-            (dissoc-at [:users user-id]))))))
+(defn get-user [db user-id]
+  (let [user-id (str user-id (int 1000))]
+    (with-read-transaction [db tx]
+      (if (get-at tx [:users user-id])
+        1
+        0))))
 
 (defn- assoc-long-path [db path]
   (with-write-transaction [db tx]
@@ -57,14 +54,20 @@
                         :other (nth path 0)
                         :val (rand)}))))
 
+(def per-write-op-count 500005)
+(def per-read-op-count 1000000)
+
 (defn- create-operation-set [database]
-  (let [per-op-count 500005
-        wordlist (take per-op-count (cycle wordlist))
+  (let [wordlist (take per-write-op-count (cycle wordlist))
         assoc-users (doall (map (fn [word] #(assoc-user database word)) (shuffle wordlist)))
         assoc-long-paths (doall (map (fn [path] #(assoc-long-path database path)) (map #(conj % (str (int (rand 10000))))
-                                                                                       (shuffle (partition 10 1 wordlist)))))]
-    (cl-format *out* "Prepped ~:d Operations~%" (+ (count assoc-users) (count assoc-long-paths)))
-    (shuffle (concat assoc-users assoc-long-paths))))
+                                                                                       (shuffle (partition 10 1 wordlist)))))
+        wordlist (take per-read-op-count (cycle wordlist))
+        read-ops (doall (map (fn [word] #(get-user database word)) (shuffle wordlist)))]
+    (cl-format *out* "Prepped ~:d Write Operations~%" (+ (count assoc-users) (count assoc-long-paths)))
+    (cl-format *out* "Prepped ~:d Read Operations~%" (count read-ops))
+    {:write-ops (shuffle (concat assoc-users assoc-long-paths))
+     :read-ops read-ops}))
 
 (defn run-benchmark [& [reset]]
   (binding [codax.store/*monitor-metrics* metric-printer]
@@ -76,21 +79,41 @@
       (let [database (open-database "test-databases/BENCH_perf")]
         (println "Counting Initial Records...")
         (cl-format *out* "Initial Records: ~:d~%" (with-read-transaction [database tx] (codax.store/b+count-all tx)))
+        (println)
         (println "Getting Depth...")
         (cl-format *out* "Initial Depth: ~:d~%" (with-read-transaction [database tx] (codax.store/b+depth tx)))
         (close-database database)))
     (let [database (open-database "test-databases/BENCH_perf")]
-      (println "Setting Up Write Performance Benchmark")
+      (println)
+      (println "Setting Up Performance Benchmark")
       (try
-        (let [opset (create-operation-set database)
+        (let [{:keys [write-ops read-ops]} (create-operation-set database)
               start-time (System/nanoTime)]
-          (println "Setup Complete, Running Write Performance Benchmark...")
+          (println "Setup Complete.")
+          (println)
+          (println "Running Write Performance Benchmark...")
           (println "----")
-          (dorun (map #(%) opset))
+          (dorun (map #(%) write-ops))
           (println "----")
+          (println)
+          (println "Running Read Performance Benchmark...")
+          (println "----")
+          (let [read-start-time (System/nanoTime)
+                read-results (reduce + (doall (pmap #(%) read-ops)))
+                read-time (- (System/nanoTime) read-start-time)]
+            (cl-format *out*
+                       "read ops: ~9:d     op-time: ~5ds     reads/sec: ~5d     items-found: ~5d~%"
+                       per-read-op-count
+                       (long (/ read-time 1000000000))
+                       (long (/ per-read-op-count (/ read-time 1000000000)))
+                       read-results))
+          (println "----")
+          (println)
           (println "Benchmark Complete. Total Time:" (format-nano-interval (- (System/nanoTime) start-time)))
+          (println)
           (println "Counting Records...")
           (cl-format *out* "Total Records: ~:d~%" (with-read-transaction [database tx] (codax.store/b+count-all tx)))
+          (println)
           (println "Getting Depth...")
           (cl-format *out* "Final Depth: ~:d~%" (with-read-transaction [database tx] (codax.store/b+depth tx))))
         (finally (close-database "test-databases/BENCH_perf"))))))
