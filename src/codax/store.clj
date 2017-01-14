@@ -630,3 +630,21 @@
                     (assoc-in [:dirty-nodes root-id] nil)))
               (assoc-in txn [:dirty-nodes (:id node)] node)))
           result)))))
+
+;;; Util
+
+(defn b+count-all [txn]
+  (loop [node-id 1
+         total 0]
+    (if node-id
+      (let [node (get-node txn node-id)]
+        (recur (:next node)
+               (+ total (count (:records node)))))
+      total)))
+
+(defn b+depth [txn]
+  (loop [depth 0
+         node (get-node txn (:root-id txn))]
+    (if (leaf-node? node)
+      (inc depth)
+      (recur (inc depth) (get-node txn (second (first (:records node))))))))
