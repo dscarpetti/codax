@@ -73,12 +73,12 @@
         (println "Clearing Database...")
         (codax.store/destroy-database "test-databases/BENCH_perf")
         (println "Database Cleared"))
-      (do
-          (println "Counting Initial Records...")
-          (cl-format *out* "Initial Records: ~:d"
-                   (count
-                    (with-read-transaction [database tx] (codax.operations/seek tx nil nil :no-decode true :only-keys true)))))
-
+      (let [database (open-database "test-databases/BENCH_perf")]
+        (println "Counting Initial Records...")
+        (cl-format *out* "Initial Records: ~:d~%" (with-read-transaction [database tx] (codax.store/b+count-all tx)))
+        (println "Getting Depth...")
+        (cl-format *out* "Initial Depth: ~:d~%" (with-read-transaction [database tx] (codax.store/b+depth tx)))
+        (close-database database)))
     (let [database (open-database "test-databases/BENCH_perf")]
       (println "Setting Up Write Performance Benchmark")
       (try
@@ -90,7 +90,7 @@
           (println "----")
           (println "Benchmark Complete. Total Time:" (format-nano-interval (- (System/nanoTime) start-time)))
           (println "Counting Records...")
-          (cl-format *out* "Total Records: ~:d"
-                   (count
-                    (with-read-transaction [database tx] (codax.operations/seek tx nil nil :no-decode true :only-keys true)))))
+          (cl-format *out* "Total Records: ~:d~%" (with-read-transaction [database tx] (codax.store/b+count-all tx)))
+          (println "Getting Depth...")
+          (cl-format *out* "Final Depth: ~:d~%" (with-read-transaction [database tx] (codax.store/b+depth tx))))
         (finally (close-database "test-databases/BENCH_perf"))))))
