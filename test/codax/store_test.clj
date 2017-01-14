@@ -1,11 +1,12 @@
 (ns codax.store-test
   (:require
    [codax.store :refer :all]
+   [clojure.java.io :as io]
    [clojure.pprint :refer [pprint]]
    [clojure.string :as str]
-   [clojure.test :refer :all]))
-
-;;;;; Testing
+   [clojure.test :refer :all])
+  (:import
+   [java.io RandomAccessFile]))
 
 (def ^:dynamic *testing-database* nil)
 
@@ -16,7 +17,113 @@
 
 (use-fixtures :each store-setup-and-teardown)
 
+(deftest attempt-reopen
+  (is (thrown-with-msg?
+       Exception
+       #"Database Already Open"
+       (open-database (:path *testing-database*)))))
 
+(deftest open-non-folder
+  (spit "test-databases/non-folder" "content")
+  (try
+    (open-database "test-databases/non-folder")
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= cause :not-a-directory))
+        (is (= (.getMessage e) "Invalid Database"))))
+    (finally (io/delete-file "test-databases/non-folder"))))
+
+(defmacro with-simulated-manifest [[path type-long version-int order-int] & body]
+  `(let [path# ~path]
+     (io/make-parents (str path# "/manifest"))
+     (let [file# (RandomAccessFile. (str path# "/manifest") "rws")]
+       (do
+         (.writeLong file# (long ~type-long))
+         (.writeInt file# (int ~version-int))
+         (.writeInt file# (int ~order-int)))
+         (.close file#))
+       (try
+         (do ~@body)
+         (finally
+           (io/delete-file (str path# "/manifest"))
+           (io/delete-file path#)))))
+
+(deftest open-invalid-type
+  (with-simulated-manifest ["test-databases/bad-type-flag"
+                            (inc codax.store/file-type-tag)
+                            codax.store/file-version-tag
+                            codax.store/order]
+    (try
+      (open-database "test-databases/bad-type-flag")
+      (catch clojure.lang.ExceptionInfo e
+        (let [{:keys [cause] :as data} (ex-data e)]
+          (println data)
+          (is (= cause :file-type-mismatch))
+          (is (= (.getMessage e) "Invalid Database")))))))
+
+(deftest open-invalid-version
+  (with-simulated-manifest ["test-databases/bad-version-flag"
+                            codax.store/file-type-tag
+                            (inc codax.store/file-version-tag)
+                            codax.store/order]
+    (try
+      (open-database "test-databases/bad-version-flag")
+      (catch clojure.lang.ExceptionInfo e
+        (let [{:keys [cause] :as data} (ex-data e)]
+          (println data)
+          (is (= cause :version-mismatch))
+          (is (= (.getMessage e) "Incompatible Database")))))))
+
+(deftest open-invalid-order
+  (with-simulated-manifest ["test-databases/bad-order-param"
+                            codax.store/file-type-tag
+                            codax.store/file-version-tag
+                            (inc codax.store/order)]
+    (try
+      (open-database "test-databases/bad-order-param")
+      (catch clojure.lang.ExceptionInfo e
+        (let [{:keys [cause] :as data} (ex-data e)]
+          (println data)
+          (is (= cause :order-mismatch))
+          (is (= (.getMessage e) "Incompatible Database")))))))
+
+
+(deftest read-tx-on-closed-database
+  (try
+    (do
+      (close-database *testing-database*)
+      (with-read-transaction [*testing-database* tx]))
+
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= cause :attempted-transaction))
+        (is (= (.getMessage e) "Database Closed"))))))
+
+(deftest write-tx-on-closed-database
+  (try
+    (do
+      (close-database *testing-database*)
+      (with-write-transaction [*testing-database* tx]))
+
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= cause :attempted-transaction))
+        (is (= (.getMessage e) "Database Closed"))))))
+
+
+(deftest compaction-on-closed-database
+  (try
+    (do
+      (close-database *testing-database*)
+      (compact-database *testing-database*))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= cause :attempted-compaction))
+        (is (= (.getMessage e) "Database Closed"))))))
 
 (defn insert-and-remove [db node-count]
   (let [keys (range node-count)
