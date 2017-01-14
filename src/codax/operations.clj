@@ -37,6 +37,7 @@
        only-vals (map second results)
        :else (map #(update % 0 pathwise/decode) results)))))
 
+
 (defn- reduce-assoc [coll [k v]]
   (if (not (vector? k))
     coll
@@ -81,19 +82,36 @@
   [tx path]
   (get-in (reduce reduce-assoc {} (seek tx path)) path))
 
-(defn- del-path [tx path]
+(defn- validate-path [tx path]
+  (when (empty? path) (throw (ex-info "Invalid Path" {:cause :empty-path
+                                                      :message "You cannot modify the empty (root) path."})))
+  (loop [remaining-path (pop path)
+         validated-paths (or (:validated-paths tx) #{})]
+    (if (or (zero? (count remaining-path))
+            (contains? validated-paths remaining-path))
+      (assoc tx :validated-paths validated-paths)
+      (if-let [val (get-val tx remaining-path)]
+        (throw (ex-info "Occupied Path" {:cause :non-map-element
+                                         :message "Could not extend the path because a non-map element was encountered."
+                                         :attempted-path path
+                                         :element-at remaining-path
+                                         :element-value val}))
+        (recur (pop remaining-path) (conj validated-paths remaining-path))))))
+
+(defn- clear-path [tx path]
   (reduce (fn [tx raw-key] (store/b+remove tx raw-key))
           tx
           (seek tx path path :only-keys true :no-decode true)))
 
 (defn- assoc-helper [tx path x]
   (if (map? x)
-    (reduce (fn [tx [k v]] (assoc-helper tx (conj path k) v)) tx x)
+    (reduce-kv (fn [tx k v] (assoc-helper tx (conj path k) v)) tx x)
     (put-val tx path x)))
 
-(defn assoc-map [tx path v]
+(defn assoc-path [tx path v]
   (-> tx
-      (del-path path)
+      (validate-path path)
+      (clear-path path)
       (assoc-helper path v)))
 
 (defn- collect-delete [tx path]
@@ -101,23 +119,13 @@
     {:original (get-in (reduce reduce-assoc {} (map #(update % 0 pathwise/decode) values)) path)
      :tx (reduce (fn [t [raw-key _]] (store/b+remove tx raw-key)) tx values)}))
 
-(defn update-map [tx path f & args]
-  (let [{:keys [tx original]} (collect-delete tx path)
+(defn update-path [tx path f & args]
+  (let [tx (validate-path tx path)
+        {:keys [tx original]} (collect-delete tx path)
         updated (apply f original args)]
     (assoc-helper tx path updated)))
 
-(defn delete-map [tx path]
-  (del-path tx path))
-
-(defn put-map [tx path x]
-  (cond
-    (map? x) (reduce (fn [tx [k v]] (put-map tx (conj path k) v)) tx x)
-    (nil? x) (del-path tx path)
-    :else (-> tx
-              (del-path path)
-              (put-val path x))))
-
-(defn put-map-update [tx path f & args]
-  (let [original (collect tx path)
-        updated (apply f original args)]
-    (put-map tx path updated)))
+(defn delete-path [tx path]
+  (when (empty? path) (throw (ex-info "Invalid Path" {:cause :empty-path
+                                                      :message "You cannot clear the empty (root) path."})))
+  (clear-path tx path))

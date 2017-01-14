@@ -28,51 +28,15 @@ a long in nanoseconds."
        (let [tx (if (get-at tx [:users user-id :id])
                   tx
                   (-> tx
-                      (update-val [:metrics :user-counts :all] inc-count)
-                      (update-val [:metrics :user-counts :starts-with (str (first user-id))] inc-count)))]
-         (assoc-at tx [:users user-id] user)))
-     user-id)))
-
-(defn- put-user [db user-id]
-  (bench
-   "put user"
-   (let [;;user-id (str user-id (int (rand 10000)))
-         timestamp (System/nanoTime)
-         test-keys (reduce #(assoc %1 (str %2) (str %2)) {} user-id)
-         user {:id user-id
-               :timestamp timestamp
-               :test-keyset (set (map str user-id))
-               :test-keys test-keys}]
-     (with-write-transaction [db tx]
-       (let [tx (if (get-at tx [:users user-id :id])
-                  tx
-                  (-> tx
                       (update-at [:metrics :user-counts :all] inc-count)
                       (update-at [:metrics :user-counts :starts-with (str (first user-id))] inc-count)))]
-         (put tx [:users user-id] user)))
-     user-id)))
-
-(defn- put-val-user [db user-id]
-  (bench
-   "put val user"
-   (let [user-id user-id];;(str user-id (int (rand 10000)))]
-     (with-write-transaction [db tx]
-       (let [tx (if (get-at tx [:users user-id :id])
-                  tx
-                  (-> tx
-                      (update-val [:metrics :user-counts :all] inc-count)
-                      (update-val [:metrics :user-counts :starts-with (str (first user-id))] inc-count)))
-             tx (reduce #(put-val %1 [:users user-id :test-keys (str %2)] (str %2)) tx user-id)]
-         (-> tx
-             (put-val [:users user-id :id] user-id)
-             (put-val [:users user-id :timestamp] (System/nanoTime))
-             (put-val [:users user-id :test-keyset] (set (map str user-id))))))
+         (assoc-at tx [:users user-id] user)))
      user-id)))
 
 (defn- dissoc-user [db user-id]
   (bench
    "delete user"
-   (let [user-existed (with-read-transaction [db tx] (get-val tx [:users user-id :id]))]
+   (let [user-existed (with-read-transaction [db tx] (get-at tx [:users user-id :id]))]
      (if user-existed
        (with-write-transaction [db tx]
          (-> tx
@@ -96,7 +60,7 @@ a long in nanoseconds."
    (with-read-transaction [db tx]
      (let [users (get-at tx [:users])
            all-user-count (get-at tx [:metrics :user-counts :all])]
-       ;;(println (count users) all-user-count)
+       (println "users counts:" (count users) all-user-count)
        (if (and all-user-count (not (= (count users) all-user-count)))
          (throw (Exception. (str "count mismatch: " (count users) " " all-user-count "\n"))))))))
 
@@ -112,13 +76,11 @@ a long in nanoseconds."
 
 (defn- create-user-operation-set [database write-count read-count verification-count]
   (let [wordlist (take (* 4 write-count) wordlist)
-        assoc-users (doall (map (fn [word] #(assoc-user database word)) (take write-count (shuffle wordlist))))
-        put-users (doall (map (fn [word] #(put-user database word)) (take write-count (shuffle wordlist))))
-        put-val-users (doall (map (fn [word] #(put-val-user database word)) (take write-count (shuffle wordlist))))
+        assoc-users (doall (map (fn [word] #(assoc-user database word)) (take (* 3 write-count) (shuffle wordlist))))
         dissoc-users (doall (map (fn [word] #(dissoc-user database word)) (take write-count (shuffle wordlist))))
         user-verification (repeatedly read-count #(fn [] (verify-user-data database (first (shuffle wordlist)))))
         all-users-verification (repeatedly verification-count #(fn [] (verify-all-users database)))]
-    (shuffle (concat assoc-users put-users put-val-users user-verification dissoc-users all-users-verification))))
+    (shuffle (concat assoc-users user-verification dissoc-users all-users-verification))))
                      ;;[#(do (close-database database) (codax.store/compact-database database))]))))
 
 (defn run-user-benchmark [& {:keys [no-cache writes reads verifications] :or {writes 1500 reads 7500 verifications 0}}]

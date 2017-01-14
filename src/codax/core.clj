@@ -54,7 +54,7 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path val-or-map]
-  (ops/assoc-map tx (prefix-path tx path) val-or-map))
+  (ops/assoc-path tx (prefix-path tx path) val-or-map))
 
 (defn update-at
   "Runs a function on the current map or value at the supplied path and `assoc-at`s the result.
@@ -68,7 +68,12 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path f & args]
-  (apply ops/update-map tx (prefix-path tx path) f args))
+  (apply ops/update-path tx (prefix-path tx path) f args))
+
+(defn merge-at
+  [tx path m]
+  (apply ops/update-path tx (prefix-path tx path) merge m))
+
 
 (defn dissoc-at
   "Deletes all values at the supplied path.
@@ -81,110 +86,7 @@
   The path will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path]
-  (ops/delete-map tx (prefix-path tx path)))
-
-;; Put operations
-
-(defn put
-  "Puts a value, or map of values, at the supplied path.
-
-  If the value is `nil`, or is a map with `nil` values, the value(s) at the respective
-  locations will be deleted. Missing values will not.
-
-  If the value is anything else, it will be inserted into the database at the supplied
-  path, overwriting any existing value.
-
-  The values will be changed in the datastore when the transaction is committed
-  (occurs  after the `body` of a `with-write-transaction` form).
-
-  All paths will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not)."
-  [tx path val-or-map]
-  (ops/put-map tx (prefix-path tx path) val-or-map))
-
-(defn put-update
-  "Runs a function on the current map or value at the supplied path and `put`s the result.
-
-  If the value is `nil`, or is a map with `nil` values, the value(s) at the respective
-  locations will be deleted. Missing values will not.
-
-  If the value is anything else, it will be inserted into the database at the supplied
-  path, overwriting any existing value.
-
-  Note: because `put` is used, a result map that is missing keys will *not* remove those
-  keys. Keys must have a value of `nil` to be removed. So, in general `dissoc` will have
-  no effect.
-
-  The values will be changed in the datastore when the transaction is committed
-  (occurs  after the `body` of a `with-write-transaction` form).
-
-  All paths will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not)."
-  [tx path f & args]
-  (apply ops/put-map-update tx (prefix-path tx path) f args))
-
-
-;; Value Operations
-
-(defn get-val
-  "Returns the value at the supplied `path`. If the value has been modified within the
-  transaction, it will evaluate to the modified value
-
-  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not).
-
-  *Warning*
-  `get-at` is preferred, unless you are certain the path does not point to a map. If it
-  does, nothing will be returned."
-  [tx path]
-  (ops/get-val tx (prefix-path tx path)))
-
-
-(defn put-val
-  "Puts a non-map value `v` at `path`. If the value is `nil` is is the equivalent of
-  calling `delete-val`
-
-  The value will be set in the datastore when the transaction is committed, (which
-  (occurs  after the `body` of a `with-write-transaction` form).
-
-  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not).
-
-  *Warning*
-  `put` is preferred, unless you are certain the path does not point to a map. If it
-  does, the datastore will be left in an inconsistent state."
-  [tx path v]
-  (assert (not (map? v)) "The value cannot be a map")
-  (ops/put-val tx (prefix-path tx path) v))
-
-(defn update-val
-  "Runs the supplied function current value at `path`, and set the `path` to the result.
-  The value will be set in the datastore when the transaction is committed, (which
-  (occurs  after the `body` of a `with-write-transaction` form).
-
-  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not).
-
-  *Warning*
-  `update-at` is preferred, unless you are certain the path does not point to a map. If it
-  does, the datastore will be left in an inconsistent state."
-  [tx path f & args]
-  (apply ops/update-val tx (prefix-path tx path) f args))
-
-(defn delete-val
-  "Clears the non-map value at `path`.
-
-  The value will be deleted from the datastore when the transaction is committed, (which
-  (occurs  after the `body` of a `with-write-transaction` form).
-
-  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
-  by default, it does not).
-
-  *Warning*
-  `dissoc-at` is preferred, unless you are certain that the path does not point
-  to a map. If it does, nothing will occur."
-  [tx path]
-  (ops/delete-val tx (prefix-path tx path)))
+  (ops/delete-path tx (prefix-path tx path)))
 
 ;;;; Transactions
 
@@ -206,3 +108,37 @@
   `(store/with-read-transaction [~database ~tx-symbol]
      (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
        ~@body)))
+
+;;;; Direct Database Functions
+
+(defn get-at!
+  "See (doc codax.core/get-at)"
+  ([db]
+   (get-at! db []))
+  ([db path]
+   (with-read-transaction [db tx]
+     (get-at tx path))))
+
+(defn assoc-at!
+  "See (doc codax.core/assoc-at)"
+  [db path val-or-map]
+  (with-write-transaction [db tx]
+    (assoc-at tx path val-or-map)))
+
+(defn update-at!
+  "See (doc codax.core/update-at)"
+  [db path f & args]
+  (with-write-transaction [db tx]
+    (apply update-at tx path args)))
+
+(defn merge-at!
+  "See (doc codax.core/merge-at)"
+  [db path m]
+  (with-write-transaction [db tx]
+    (merge-at tx path m)))
+
+(defn dissoc-at!
+  "See (doc codax.core/dissoc-at)"
+  [db path]
+  (with-write-transaction [db tx]
+    (dissoc-at tx path)))

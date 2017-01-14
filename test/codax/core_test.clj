@@ -38,15 +38,6 @@
      ~final-value)))
 
 
-(deftest put-single-val
-  (wrc
-   (put-val tx [1 "a" :b 1.0 'c] ["x"])
-   (get-val tx [1 "a" :b 1.0 'c])
-   ["x"])
-  (rc
-   (get-val tx [1 "a" :b 1.0])
-   nil))
-
 (deftest single-assoc-at
   (wrc
    (assoc-at tx [1 "a" :b 1.0 'c] ["x"])
@@ -70,32 +61,6 @@
   (rc
    (get-at tx nil)
    {1 {"a" {:b {1.0 {'c ["x"]}}}}}))
-
-
-
-(deftest assoc-at+remove-val
-  (wrc
-   (assoc-at tx [-1 :people] {"Sam" {:name "Sam"
-                                     :title "Mr"}
-                              "Sally" {:name "Sally"
-                                       :title "Mrs"}})
-   (get-at tx [-1 :people "Sam"])
-   {:name "Sam"
-    :title "Mr"})
-  (rc
-   (get-at tx [-1])
-   {:people {"Sam" {:name "Sam"
-                    :title "Mr"}
-             "Sally" {:name "Sally"
-                      :title "Mrs"}}})
-  (wrc
-   (delete-val tx [-1 :people "Sam" :title])
-   (get-at tx [-1 :people "Sam"])
-   {:name "Sam"})
-  (wrc
-   (delete-val tx [-1 :people "Sam"])
-   (get-at tx [-1 :people "Sam"])
-   {:name "Sam"}))
 
 (deftest assoc-at+dissoc-at
   (wrc
@@ -157,9 +122,7 @@
              "Sam" {:name "Sammy"
                     :profession "Go"}}}))
 
-
-
-(deftest assoc-at+put-overwrite
+(deftest assoc-at+merge-at-overwrite
   (wrc
    (assoc-at tx [-1 :people] {"Sam" {:name "Sam"
                                      :title "Mr"}
@@ -175,12 +138,12 @@
              "Sally" {:name "Sally"
                       :title "Mrs"}}})
   (wrc
-   (put tx [-1 :people "Sam" :title] "Sir")
+   (merge-at tx [-1 :people "Sam"] {:title "Sir"})
    (get-at tx [-1 :people "Sam"])
    {:name "Sam"
     :title "Sir"})
   (wrc
-   (put tx [-1 :people "Sam"] {:name "Sammy" :profession "Go"})
+   (merge-at tx [-1 :people "Sam"] {:name "Sammy" :profession "Go"})
    (get-at tx [-1 :people "Sam"])
    {:name "Sammy"
     :title "Sir"
@@ -195,18 +158,6 @@
 
 ;;;;;
 
-
-(deftest one-write-assoc-at+remove-val
-  (wrc
-   (-> tx
-       (assoc-at [-1 :people] {"Sam" {:name "Sam"
-                                      :title "Mr"}
-                               "Sally" {:name "Sally"
-                                        :title "Mrs"}})
-       (delete-val [-1 :people "Sam" :title])
-       (delete-val [-1 :people "Sam"]))
-   (get-at tx [-1 :people "Sam"])
-   {:name "Sam"}))
 
 (deftest one-write-assoc-at+dissoc-at
   (wrc
@@ -236,21 +187,65 @@
              "Sam" {:name "Sammy"
                     :profession "Go"}}}))
 
-(deftest one-write-assoc-at+put-overwrite
+(deftest one-write-assoc-at+merge-at
   (wrc
    (-> tx
        (assoc-at [-1 :people] {"Sam" {:name "Sam"
                                       :title "Mr"}
                                "Sally" {:name "Sally"
                                         :title "Mrs"}})
-       (put [-1 :people "Sam" :title] "Sir")
-       (put [-1 :people "Sam"] {:name "Sammy" :profession "Go"}))
+       (merge-at [-1 :people "Sam"] {:title "Sir"})
+       (merge-at [-1 :people "Sam"] {:name "Sammy" :profession "Go"}))
    (get-at tx [-1])
    {:people {"Sally" {:name "Sally"
                       :title "Mrs"}
              "Sam" {:name "Sammy"
                     :title "Sir"
                     :profession "Go"}}}))
+
+(deftest write-transaction-without-final-tx
+  (is
+   (thrown?
+    java.lang.NullPointerException
+    (with-write-transaction [*testing-database* tx]))))
+
+
+(deftest failed-assoc-empty-path
+  (try
+    (with-write-transaction [*testing-database* tx]
+      (assoc-at tx [] "failure"))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= (.getMessage e) "Invalid Path"))
+        (is (= cause :empty-path))))))
+
+(deftest failed-assoc+extended-past-existing
+  (try
+    (with-write-transaction [*testing-database* tx]
+      (-> tx
+          (assoc-at [:hello] "value here")
+          (assoc-at [:hello :world] "failure")))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= (.getMessage e) "Occupied Path"))
+        (is (= cause :non-map-element))))))
+
+
+(deftest failed-assoc+extended-past-existing-separate-transactions
+  (try
+    (do
+      (with-write-transaction [*testing-database* tx]
+        (assoc-at tx [:something] "value here"))
+      (with-write-transaction [*testing-database* tx]
+        (assoc-at tx [:hello :world] "failure")))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause] :as data} (ex-data e)]
+        (println data)
+        (is (= (.getMessage e) "Occupied Path"))
+        (is (= cause :non-map-element))))))
+
 
 (defn increment-path [db]
   (with-write-transaction [db tx]
