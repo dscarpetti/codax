@@ -150,5 +150,6 @@
   (clojure.main/repl
    :init (fn []
            (in-ns 'codax.core)
-           (require [clojure.repl :refer :all]
-                    [clojure.pprint :refer [pprint]]))))
+           (require '[clojure.repl :refer :all]
+                    '[clojure.pprint :refer [pprint]]
+                    '[codax.bench.performance :refer [run-benchmark]]))))
