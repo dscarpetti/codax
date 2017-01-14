@@ -18,6 +18,7 @@
 (def cache-threshold 64)
 (def compaction-threshold 10000)
 (def nippy-options {:compressor nippy/lz4-compressor})
+(def ^:dynamic *monitor-metrics* nil)
 
 ;;;;; Databases
 
@@ -198,9 +199,21 @@
   (move-file-atomically (str path "/nodes_COMPACT") (str path "/nodes"))
   (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
+(defn update-metrics! [db start-compaction-time end-compaction-time]
+  (let [metrics @(:metrics db)
+        last-compacted-at (or (:compacted-at metrics) (:opened-at metrics))
+        compaction-number (inc (:compactions metrics))]
+    (swap! (:metrics db) assoc :compacted-at end-compaction-time :compactions compaction-number)
+    (when *monitor-metrics* (*monitor-metrics* {:compaction-time (- end-compaction-time start-compaction-time)
+                                              :operation-time (- start-compaction-time last-compacted-at)
+                                              :total-open-time (- end-compaction-time (:opened-at metrics))
+                                              :compaction-number compaction-number
+                                              :writes-per-compaction compaction-threshold}))))
+
 (defn compact-database [db]
   (locking (:write-lock db)
-    (let [path (:path db)
+    (let [start-compaction-time (System/nanoTime)
+          path (:path db)
           {:keys [manifest root-id is-closed]} @(:data db)
           _ (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-compaction
                                                                :message "The database object has been invalidated."
@@ -210,7 +223,8 @@
       (with-compaction-lock [db]
         (close-file-handles db)
         (relocate-compact-files path (:backup-fn db))
-        (initialize-database-data! db new-manifest new-nodes-offset))
+        (initialize-database-data! db new-manifest new-nodes-offset)
+        (update-metrics! db start-compaction-time (System/nanoTime)))
       true)))
 
 ;;; Open/Close/Destroy
@@ -262,6 +276,8 @@
               :backup-fn backup-fn
               :write-lock (Object.)
               :compaction-lock (ReentrantReadWriteLock. true)
+              :metrics (atom {:opened-at (System/nanoTime)
+                              :compactions 0})
               :data (atom {:root-id root-id
                            :id-counter id-counter})}]
       (initialize-database-data! db manifest nodes-offset)
