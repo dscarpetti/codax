@@ -130,7 +130,7 @@
   "See (doc codax.core/update-at)"
   [db path f & args]
   (with-write-transaction [db tx]
-    (apply update-at tx path args)))
+    (apply update-at tx path f args)))
 
 (defn merge-at!
   "See (doc codax.core/merge-at)"
