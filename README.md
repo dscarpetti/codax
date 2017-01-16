@@ -32,7 +32,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
 
-####Transactional Functions
+####In-Transaction Functions
 These are all similar to the clojure.core map `*-in` (e.g. `assoc-in`) with the following exceptions:
 
   - their first argument is a **transaction** instead of a map
@@ -47,7 +47,7 @@ These must be called within a `with-write-transaction` or a `with-read-transacti
   - `merge-at`
   - `dissoc-at`
 
-####Direct Helper Functions
+####Shortcut Functions
 These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**. These are convenience functions which automatically create and execute transactions.
 
   - `get-at!`
@@ -82,47 +82,133 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 (require [codax.core :as c])
 ```
 
-### Direct Database Use
+### Simple Use
 ``` clojure
 
-(def db (open-database "data/my-database")) ;
+(def db (c/open-database "data/demo-database")) ;
 
-(assoc-at! db [:assets :people] {0 {:name "Alice"
+(c/assoc-at! db [:assets :people] {0 {:name "Alice"
 									:occupation "Programmer"
 									:age 42}
 								 1 {:name "Bob"
 									:occupation "Writer"
 									:age 27}}) ; nil
 
-(get-at! db [:assets :people 0]) ; {:name "Alice" :occupation "Programmer" :age 42}
+(c/get-at! db [:assets :people 0]) ; {:name "Alice" :occupation "Programmer" :age 42}
 
-(update-at! db [:assets :people 1 :age] inc) ; nil
+(c/update-at! db [:assets :people 1 :age] inc) ; nil
 
-(merge-at! db [:assets] {:tools {"hammer" true
+(c/merge-at! db [:assets] {:tools {"hammer" true
 								 "keyboard" true}}) ; nil
 
-(get-at! db [:assets])
-;;{:people {0 {:name "Alice"
-;;             :occupation "Programmer"
-;;             :age 42}
-;;          1 {:name "Bob"
-;;             :occupation "Writer"
-;;             :age 27}}
-;; :tools {"hammer" true
-;;         "keyboard" true}}
+(c/get-at! db [:assets])
+;;  {:people {0 {:name "Alice"
+;;               :occupation "Programmer"
+;;               :age 42}
+;;            1 {:name "Bob"
+;;               :occupation "Writer"
+;;               :age 27}}
+;;   :tools {"hammer" true
+;;           "keyboard" true}}
 
-
-(close-database db)
+(c/close-database db)
 ```
 
-### Transaction Use
+### Transaction Example
 
 ``` clojure
-(def db (open-database "data-my-database"))
+(def db (c/open-database "data/demo-database"))
+
+;;;; init
+(c/with-write-transaction [db tx]
+  (c/assoc-at tx [:counters] {:id 0 :users 0}))
+
+;;;; user fns
+(defn add-user
+  "create a user and assign them an id"
+  [username]
+  (c/with-write-transaction [db tx]
+	(when (c/get-at tx [:usernames username] )
+	  (throw (Exception. "username already exists")))
+	(let [user-id (c/get-at tx [:counters :id])
+		  user {:id user-id
+				:username username
+				:timestamp (System/currentTimeMillis)}]
+	  (-> tx
+		  (c/assoc-at [:users user-id] user)
+		  (c/assoc-at [:usernames username] user-id)
+		  (c/update-at [:counters :id] inc)
+		  (c/update-at [:counters :users] inc)))))
+
+(defn get-user
+  "fetch a user by their username"
+  [username]
+  (c/with-read-transaction [db tx]
+	(when-let [user-id (c/get-at tx [:usernames username])]
+	  (c/get-at tx [:users user-id]))))
+
+(defn rename-user
+  "change a username"
+  [username new-username]
+  (c/with-write-transaction [db tx]
+	(when (c/get-at tx [:usernames new-username] )
+	  (throw (Exception. "username already exists")))
+	(when-let [user-id (c/get-at tx [:usernames username])]
+	  (-> tx
+		  (c/dissoc-at [:usernames username])
+		  (c/assoc-at [:usernames new-username] user-id)
+		  (c/assoc-at [:users user-id :username] new-username)))))
+
+(defn remove-user
+  "remove a uset"
+  [username]
+  (c/with-write-transaction [db tx]
+	(when-let [user-id (c/get-at tx [:usernames username])]
+	  (-> tx
+		  (c/dissoc-at [:username username])
+		  (c/dissoc-at [:users user-id])
+		  (c/update-at [:counters :users] dec)))))
+
+
+;;;;; edit users
+
+(c/get-at! db) ; {:counters {:id 0, :users 0}}
+
+
+(add-user "charlie") ; nil
+(c/get-at! db)
+;;  {:counters {:id 1, :users 1},
+;;   :usernames {"charlie" 0},
+;;   :users {0 {:id 0, :timestamp 1484529469567, :username "charlie"}}}
+
+
+(add-user "diane") ; nil
+(c/get-at! db)
+;;  {:counters {:id 2, :users 2},
+;;   :usernames {"charlie" 0, "diane" 1},
+;;   :users
+;;   {0 {:id 0, :timestamp 1484529603440, :username "charlie"},
+;;    1 {:id 1, :timestamp 1484529603444, :username "diane"}}}
+
+
+(rename-user "charlie" "chuck") ; nil
+(c/get-at! db)
+;;  {:counters {:id 2, :users 2},
+;;   :usernames {"chuck" 0, "diane" 1},
+;;   :users
+;;   {0 {:id 0, :timestamp 1484529702868, :username "chuck"},
+;;    1 {:id 1, :timestamp 1484529702872, :username "diane"}}}
+
+
+(remove-user "diane") ; nil
+(c/get-at! db)
+;;  {:counters {:id 2, :users 1},
+;;   :usernames {"chuck" 0, "diane" 1},
+;;   :users {0 {:id 0, :timestamp 1484529782527, :username "chuck"}}}
 
 
 
-
+(c/close-database db)
 
 ```
 
