@@ -21,20 +21,21 @@ Codax provides the following guarantees:
 
 ### Basic API
 
-**Database Functions**
+####Database Functions
 
   - `open-database` - Opens or creates a database
   - `close-database` - Closes an open database
 
-**Transaction Macros**
+####Transaction Macros
 These take a database argument and a transaction-symbol and bind the symbol to a newly created transaction. Transactions are isolated from each other. Read-transactions evaluate to the value of their body, but a (successful) **write-transaction evaluates to nil**.
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
 
-**Transactional Functions**
+####Transactional Functions
 These are all similar to the clojure.core map `*-in` (e.g. `assoc-in`) with the following exceptions:
-  - their first argument is a **transaction* instead of a map
+
+  - their first argument is a **transaction** instead of a map
   - their second argument is a **path** (see below)
   - their value argument or result (in the case of update) must be **conformant** (see below)
 
@@ -46,8 +47,8 @@ These must be called within a `with-write-transaction` or a `with-read-transacti
   - `merge-at`
   - `dissoc-at`
 
-**Direct Functions**
-These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**.
+####Direct Helper Functions
+These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**. These are convenience functions which automatically create and execute transactions.
 
   - `get-at!`
   - `assoc-at!`
@@ -58,22 +59,22 @@ These are the same as the transactional-functions except that their first argume
 ### Paths
 A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions
 
- - they are **limited to the following types**:
-   - Symbols
-   - Keywords
-   - Strings
-   - Numbers (float/double use is _strongly discouraged_)
-   - true
-   - false
-   - nil
-   - org.joda.time.DateTime
- - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. arrays)**.
- - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
+  - they are **limited to the following types**:
+	- Symbols
+	- Keywords
+	- Strings
+	- Numbers (float/double use is _strongly discouraged_)
+	- true
+	- false
+	- nil
+	- org.joda.time.DateTime
+  - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. arrays)**.
+  - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
 ### Conformant Values
 
-- non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
-- maps and nested maps whose **keys conform to the valid path types** listed above.
+  - non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
+  - maps and nested maps whose **keys conform to the valid path types** listed above.
 
 ## Examples
 
@@ -138,9 +139,9 @@ Codax is geared towards read-heavy workloads.
 Benchmark Taken Jan 14, 1017:
 The following figures are for a database populated with 16,000,000 (map-leaf) values running on a Digital Ocean 2-core 2GB RAM instance. The write transactions have an average "path" length of 6 and an average 7 leaf values.
 
-* ~320 write-transaction/second
-* ~1640 read-transactions/second
-* ~2700ms per compaction (compaction happens automatically every 10,000 writes)
+  - ~320 write-transaction/second
+  - ~1640 read-transactions/second
+  - ~2700ms per compaction (compaction happens automatically every 10,000 writes)
 
 These values come from running the `codax.bench.performace/run-benchmark` benchmarking function without arguments 3 times consecutively.
 
