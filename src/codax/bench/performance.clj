@@ -24,7 +24,7 @@
              (format-nano-interval total-open-time)))
 
 (defn- assoc-user [db user-id]
-  (let [user-id (str user-id (int (rand 1000)))
+  (let [user-id (str user-id (int (rand 200)))
         timestamp (System/nanoTime)
         test-keys (reduce #(assoc %1 (str %2) (str %2)) {} user-id)
         user {:id user-id
@@ -40,7 +40,7 @@
         (assoc-at tx [:users user-id] user)))))
 
 (defn get-user [db user-id]
-  (let [user-id (str user-id (int 1000))]
+  (let [user-id (str user-id (int (rand 200)))]
     (with-read-transaction [db tx]
       (if (get-at tx [:users user-id])
         1
