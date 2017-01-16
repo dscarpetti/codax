@@ -128,7 +128,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 
 ## Performance
 
-Codax is geared towards read-heavy workloads.
+**Codax is geared towards read-heavy workloads.**
 
   - Read-Transactions block _nothing_
   - Write-Transactions block other Write-Transactions
@@ -136,7 +136,10 @@ Codax is geared towards read-heavy workloads.
   - Stage-2 Compaction blocks both Reader-Transactions and Write-Transactions (fast)
 
 
-Benchmark Taken Jan 14, 1017:
+### Benchmark Results
+
+####Jan 14, 1017
+
 The following figures are for a database populated with 16,000,000 (map-leaf) values running on a Digital Ocean 2-core 2GB RAM instance. The write transactions have an average "path" length of 6 and an average 7 leaf values.
 
   - ~320 write-transaction/second
