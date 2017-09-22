@@ -1,6 +1,13 @@
 # codax
 
-Codax is an idiomatic transactional disk-based datastore for clojure. A codax database functions as a single (potentially enormous) clojure map, with a similar access & modification api.
+Codax is an idiomatic transactional embedded database for clojure. A codax database functions as a single (potentially enormous) clojure map, with a similar access & modification api.
+
+### The Why
+
+Even simple programs frequently benefit from saving files to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
+
+Fundamentally, I wrote this library for myself in an ongoing effort to make my own life simpler and my own programming more fun. I wanted to share it with the community in the hopes that other may find it does the same for them.
+
 
 ### ACID Compliance
 
@@ -10,6 +17,10 @@ Codax provides the following guarantees:
   - **Consistent** - The database always represents a valid clojure map
   - **Isolated** - No reader or writer will ever see data from an incomplete transaction
   - **Durable** - All writes are synced to disk before returning
+
+### Production Ready?
+
+I have successfully used this library in production environments. That said, there are probably a few rough edges that could use smoothing.
 
 ## Installation
 
@@ -107,7 +118,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 ;;               :age 42}
 ;;            1 {:name "Bob"
 ;;               :occupation "Writer"
-;;               :age 27}}
+;;               :age 28}}
 ;;   :tools {"hammer" true
 ;;           "keyboard" true}}
 
@@ -241,6 +252,10 @@ These values come from running the `codax.bench.performace/run-benchmark` benchm
 ### Bugs
 
 ...
+
+## Contributing
+
+Insights, suggestions, and PRs are very welcome.
 
 ## License
 
