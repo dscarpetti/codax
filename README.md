@@ -32,18 +32,20 @@ I have successfully used this library in production environments. That said, the
 
 ### Basic API
 
-####Database Functions
+*Database Functions*
 
   - `open-database` - Opens or creates a database
   - `close-database` - Closes an open database
 
-####Transaction Macros
+*Transaction Macros*
+
 These take a database argument and a transaction-symbol and bind the symbol to a newly created transaction. Transactions are isolated from each other. Read-transactions evaluate to the value of their body, but a (successful) **write-transaction evaluates to nil**.
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
 
-####In-Transaction Functions
+*In-Transaction Functions*
+
 These are all similar to the clojure.core map `*-in` (e.g. `assoc-in`) with the following exceptions:
 
   - their first argument is a **transaction** instead of a map
@@ -58,7 +60,8 @@ These must be called within a `with-write-transaction` or a `with-read-transacti
   - `merge-at`
   - `dissoc-at`
 
-####Shortcut Functions
+*Shortcut Functions*
+
 These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**. These are convenience functions which automatically create and execute transactions.
 
   - `get-at!`
@@ -235,7 +238,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 
 ### Benchmark Results
 
-####Jan 14, 1017
+*Jan 14, 1017*
 
 The following figures are for a database populated with 16,000,000 (map-leaf) values running on a Digital Ocean 2-core 2GB RAM instance. The write transactions have an average "path" length of 6 and an average 7 leaf values.
 
