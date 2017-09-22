@@ -1,6 +1,6 @@
 (defproject codax "1.0.0-SNAPSHOT"
   :description "Codax is an idiomatic transactional disk-based datastore."
-  :url "http://example.com/FIXME"
+  :url "https://github.com/dscarpetti/codax"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[com.taoensso/nippy "2.12.2"]
