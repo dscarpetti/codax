@@ -6,7 +6,7 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 Even simple programs frequently benefit from saving files to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
 
-Fundamentally, I wrote this library for myself in an ongoing effort to make my own life simpler and my own programming more fun. I wanted to share it with the community in the hopes that other may find it does the same for them.
+Fundamentally, I wrote this library for myself in an ongoing effort to make my own life simpler and my own programming more fun. I wanted to share it with the community in the hopes that others may find it does the same for them.
 
 
 ### ACID Compliance
@@ -52,7 +52,7 @@ These are all similar to the clojure.core map `*-in` (e.g. `assoc-in`) with the 
   - their second argument is a **path** (see below)
   - their value argument or result (in the case of update) must be **conformant** (see below)
 
-These must be called within a `with-write-transaction` or a `with-read-transaction` expression. Changes will only persisent if `with-write-transaction` is used.
+These must be called within a `with-write-transaction` or a `with-read-transaction` expression. Changes will only be persistent if `with-write-transaction` is used.
 
   - `get-at`
   - `assoc-at`
@@ -71,7 +71,7 @@ These are the same as the transactional-functions except that their first argume
   - `dissoc-at!`
 
 ### Paths
-A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions
+A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions:
 
   - they are **limited to the following types**:
 	- Symbols
@@ -88,7 +88,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 ### Conformant Values
 
   - non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
-  - maps and nested maps whose **keys conform to the valid path types** listed above.
+  - maps and nested maps whose **keys conform to the valid path types** listed above
 
 ## Examples
 
