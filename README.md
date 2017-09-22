@@ -102,18 +102,18 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 (def db (c/open-database "data/demo-database")) ;
 
 (c/assoc-at! db [:assets :people] {0 {:name "Alice"
-									:occupation "Programmer"
-									:age 42}
-								 1 {:name "Bob"
-									:occupation "Writer"
-									:age 27}}) ; nil
+ :occupation "Programmer"
+ :age 42}
+ 1 {:name "Bob"
+ :occupation "Writer"
+ :age 27}}) ; nil
 
 (c/get-at! db [:assets :people 0]) ; {:name "Alice" :occupation "Programmer" :age 42}
 
 (c/update-at! db [:assets :people 1 :age] inc) ; nil
 
 (c/merge-at! db [:assets] {:tools {"hammer" true
-								 "keyboard" true}}) ; nil
+ "keyboard" true}}) ; nil
 
 (c/get-at! db [:assets])
 ;;  {:people {0 {:name "Alice"
