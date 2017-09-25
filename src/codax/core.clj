@@ -110,10 +110,21 @@
      (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
        ~@body)))
 
-;;;; Direct Database Functions
+;;;; Direct Database Convenience Functions
+
+(defmacro with-result-transaction [[db-sym tx-sym path-sym] & body]
+  `(let [res# (atom nil)]
+     (with-write-transaction [~db-sym ~tx-sym]
+       (let [tx-res# (do ~@body)]
+         (reset! res# (get-at tx-res# ~path-sym))
+         tx-res#))
+     @res#))
 
 (defn get-at!
-  "See (doc codax.core/get-at)"
+  "Wraps a `get-at` call in a read transaction for convenience.
+  Returns the result at the provided path.
+  Warning: Will load and return the entire database if no path argument is supplied.
+  See (doc codax.core/get-at)"
   ([db]
    (get-at! db []))
   ([db path]
@@ -121,27 +132,35 @@
      (get-at tx path))))
 
 (defn assoc-at!
-  "See (doc codax.core/assoc-at)"
-  [db path val-or-map]
-  (with-write-transaction [db tx]
+  "Wraps an `assoc-at` call in a write transaction for convenience.
+  Returns the result at the provided path.
+  See (doc codax.core/assoc-at)"
+ [db path val-or-map]
+  (with-result-transaction [db tx path]
     (assoc-at tx path val-or-map)))
 
 (defn update-at!
-  "See (doc codax.core/update-at)"
+  "Wraps an `update-at` call in a write transaction for convenience.
+  Returns the result at the provided path.
+  See (doc codax.core/update-at)"
   [db path f & args]
-  (with-write-transaction [db tx]
+  (with-result-transaction [db tx path]
     (apply update-at tx path f args)))
 
 (defn merge-at!
-  "See (doc codax.core/merge-at)"
+  "Wraps a `merge-at` call in a write transaction for convenience.
+  Returns the result at the provided path.
+  See (doc codax.core/merge-at)"
   [db path m]
-  (with-write-transaction [db tx]
+  (with-result-transaction [db tx path]
     (merge-at tx path m)))
 
 (defn dissoc-at!
-  "See (doc codax.core/dissoc-at)"
+  "Wraps a `dissoc-at` call in a write transaction for convenience.
+  Returns the result at the provided path.
+  See (doc codax.core/dissoc-at)"
   [db path]
-  (with-write-transaction [db tx]
+  (with-result-transaction [db tx path]
     (dissoc-at tx path)))
 
 ;;;; Main
