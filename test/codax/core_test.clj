@@ -262,3 +262,57 @@
 
 (deftest inc-test
   (increment-test *testing-database* 1000))
+
+
+;;;; convenience function tests
+
+(deftest assoc-at!-test
+  (is (=
+       (assoc-at! *testing-database* [:letters] {:a 1 :b 2})
+       (get-at! *testing-database* [:letters])
+       {:a 1 :b 2}))
+  (is (=
+       (get-at! *testing-database*)
+       {:letters {:a 1 :b 2}})))
+
+
+(deftest update-at!-test
+  (let [add (fn [x y] (+ x y))
+        subtract (fn [x y] (- x y))]
+    (is (= 1 (update-at! *testing-database* [:count] inc-count)))
+    (is (= 2 (update-at! *testing-database* [:count] inc-count)))
+    (is (= 12 (update-at! *testing-database* [:count] add 10)))
+    (is (= 7 (update-at! *testing-database* [:count] subtract 5)))
+    (is (= 7 (get-at! *testing-database* [:count])))))
+
+(deftest merge-at!-test
+  (is (=
+       (assoc-at! *testing-database* [:letters] {:a 1 :b 2})
+       (get-at! *testing-database* [:letters])
+       {:a 1 :b 2}))
+  (is (=
+       (merge-at! *testing-database* [:letters] {:c 3 :d 4})
+       (get-at! *testing-database* [:letters])
+       {:a 1 :b 2 :c 3 :d 4}))
+  (is (=
+       (get-at! *testing-database*)
+       {:letters {:a 1 :b 2 :c 3 :d 4}})))
+
+(deftest dissoc-at!-test
+  (is (=
+       (assoc-at! *testing-database* [:letters] {:a 1 :b 2 :c 3})
+       (get-at! *testing-database* [:letters])
+       {:a 1 :b 2 :c 3}))
+  (is (=
+       (dissoc-at! *testing-database* [:letters :c])
+       nil))
+  (is (=
+       (get-at! *testing-database* [:letters])
+       {:a 1 :b 2}))
+  (is (=
+       (dissoc-at! *testing-database* [:letters])
+       (get-at! *testing-database* [:letters])
+       nil))
+  (is (=
+       (get-at! *testing-database*)
+       {})))
