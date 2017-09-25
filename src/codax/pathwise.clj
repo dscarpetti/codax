@@ -81,7 +81,7 @@
         type-char (gensym "type-char")
         body (gensym "body")]
     `(do
-       (defn encode-element [~el]
+       (defn ~'encode-element [~el]
          (cond
            ~@(reduce concat
                      (vec
@@ -90,7 +90,7 @@
                                       `(str (char ~hex) (~encoder ~el) +delim+)])
                                    type-specs))))
            :else (throw (Exception. (str "no method for encoding `" ~el "`")))))
-       (defn decode-element [~el]
+       (defn ~'decode-element [~el]
          (let [~type-char (first ~el)
                ~body (butlast (rest ~el))]
            (cond
