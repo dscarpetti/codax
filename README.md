@@ -25,7 +25,7 @@ I have successfully used this library in production environments. That said, the
 ## Installation
 
 ```clojure
-[codax "1.0.0-SNAPSHOT"]
+[codax "1.0.1-SNAPSHOT"]
 ```
 
 ## Usage
@@ -62,7 +62,7 @@ These must be called within a `with-write-transaction` or a `with-read-transacti
 
 **Shortcut Functions**
 
-These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**. These are convenience functions which automatically create and execute transactions.
+These are the same as the transactional-functions except that their first argument is a **database** instead of a **transaction**. These are convenience functions which automatically create and execute transactions. The write variants will also return the result of the modification.
 
   - `get-at!`
   - `assoc-at!`
@@ -106,14 +106,14 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
                                       :age 42}
                                    1 {:name "Bob"
                                       :occupation "Writer"
-                                      :age 27}}) ; nil
+                                      :age 27}}) ; {0 {:age 42, :name "Alice", ...}, 1 {:age 27, :name "Bob", ...}}
 
 (c/get-at! db [:assets :people 0]) ; {:name "Alice" :occupation "Programmer" :age 42}
 
-(c/update-at! db [:assets :people 1 :age] inc) ; nil
+(c/update-at! db [:assets :people 1 :age] inc) ; 28
 
 (c/merge-at! db [:assets] {:tools {"hammer" true
-                                   "keyboard" true}}) ; nil
+                                   "keyboard" true}}) ; {:people {...} :tools {"hammer" true, "keyboard" true}}
 
 (c/get-at! db [:assets])
 ;;  {:people {0 {:name "Alice"
@@ -262,7 +262,7 @@ Insights, suggestions, and PRs are very welcome.
 
 ## License
 
-Copyright © 2016 David Scarpetti
+Copyright © 2017 David Scarpetti
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
