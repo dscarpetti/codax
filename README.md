@@ -248,9 +248,16 @@ The following figures are for a database populated with 16,000,000 (map-leaf) va
 
 These values come from running the `codax.bench.performace/run-benchmark` benchmarking function without arguments 3 times consecutively.
 
-## Options
+## Testing
 
-...
+You can run the tests from the command line with `lein test`.
+
+A few notes:
+
+* Tests that are expected to throw errors will print those errors to the console, that does not indicate that the test has failed.
+* The store-test may lag for a minute or two as it runs a test interleaving 20,000 writes with 100,000 reads.
+* Any help expanding and normalizing the testing would be greatly appreciated.
+
 
 ### Bugs
 
