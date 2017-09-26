@@ -76,6 +76,15 @@
 (defn decode-date-time [d]
   (time-format/parse date-time-formatter (string/join d)))
 
+(defn java-time? [x]
+  (instance? java.time.Instant x))
+
+(defn encode-java-time [t]
+  (str t))
+
+(defn decode-java-time [t]
+  (java.time.Instant/parse (string/join t)))
+
 (defmacro build-encoding-functions [type-specs]
   (let [el (gensym "el")
         type-char (gensym "type-char")
@@ -126,6 +135,10 @@
               :hex 0x24
               :encoder encode-date-time
               :decoder decode-date-time}
+  :java-time {:predicate java-time?
+              :hex 0x25
+              :encoder encode-java-time
+              :decoder decode-java-time}
   :neg-infinity {:predicate neg-infinity?
                  :hex 0x30
                  :encoder (fn [_] "")
