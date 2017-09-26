@@ -109,7 +109,7 @@
  {:nil {:predicate nil?
         :hex 0x10
         :encoder (fn [_] "")
-        :decoder(fn [_] nil)}
+        :decoder (fn [_] nil)}
   :symbol {:predicate symbol?
            :hex 0x68
            :encoder encode-symbol
