@@ -1,7 +1,7 @@
 (ns codax.pathwise
   (:require
    [clojure.string :as string]
-   [clj-time.format :as time-format]))
+   [clj-time.format :as joda-time-format]))
 
 (def +delim+ (char 0x00))
 (def +vector+ (char 0xa0))
@@ -65,16 +65,16 @@
 (defn encode-string [s] s)
 (defn decode-string [s] (string/join s))
 
-(def date-time-formatter (time-format/formatter :basic-date-time))
+(def joda-time-formatter (joda-time-format/formatter :basic-date-time))
 
-(defn date-time? [x]
+(defn joda-time? [x]
   (instance? org.joda.time.DateTime x))
 
-(defn encode-date-time [d]
-  (time-format/unparse date-time-formatter d))
+(defn encode-joda-time [d]
+  (joda-time-format/unparse joda-time-formatter d))
 
-(defn decode-date-time [d]
-  (time-format/parse date-time-formatter (string/join d)))
+(defn decode-joda-time [d]
+  (joda-time-format/parse joda-time-formatter (string/join d)))
 
 (defn java-time? [x]
   (instance? java.time.Instant x))
@@ -131,10 +131,10 @@
          :hex 0x21
          :encoder (fn [_] "")
          :decoder (fn [_] true)}
-  :date-time {:predicate date-time?
+  :joda-time {:predicate joda-time?
               :hex 0x24
-              :encoder encode-date-time
-              :decoder decode-date-time}
+              :encoder encode-joda-time
+              :decoder decode-joda-time}
   :java-time {:predicate java-time?
               :hex 0x25
               :encoder encode-java-time
