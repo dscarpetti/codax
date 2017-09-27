@@ -77,9 +77,13 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
 	- true
 	- false
 	- nil
+	- java.time.Instant
 	- org.joda.time.DateTime
-  - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. arrays)**.
+  - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
+
+If you are interested in contributing support for additional types, please review [doc/types.md](https://github.com/dscarpetti/codax/blob/master/doc/types.md).
+
 
 ### Conformant Values
 
