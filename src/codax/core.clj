@@ -46,9 +46,6 @@
   "Associates a path with a value or object, overwriting the current value (and all nested
   values)
 
-  Supplying `nil` for `val-or-map` is the equivalet of running `dissoc-at`.
-  Nested `nil` values are not stored.
-
   The values will be changed in the datastore when the transaction is committed
   (occurs  after the `body` of a `with-write-transaction` form).
 
@@ -59,9 +56,6 @@
 
 (defn update-at
   "Runs a function on the current map or value at the supplied path and `assoc-at`s the result.
-
-  If the result of evaluation is `nil` it is the equivalet of running `dissoc-at`.
-  Nested `nil` values are not stored.
 
   The values will be changed in the datastore when the transaction is committed
   (occurs  after the `body` of a `with-write-transaction` form).
@@ -81,8 +75,6 @@
 
   The value will be deleted from the datastore when the transaction is committed, (which
   (occurs  after the `body` of a `with-write-transaction` form).
-
-  Equivalent to calling `assoc-at` with a `val-or-map` of `nil`.
 
   The path will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
