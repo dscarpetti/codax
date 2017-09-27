@@ -2,6 +2,8 @@
 
 Codax is an idiomatic transactional embedded database for clojure. A codax database functions as a single (potentially enormous) clojure map, with a similar access & modification api.
 
+[![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
+
 ### The Why
 
 Even simple programs frequently benefit from saving files to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
@@ -21,12 +23,6 @@ Codax provides the following guarantees:
 ### Production Ready?
 
 I have successfully used this library in production environments. That said, there are probably a few rough edges that could use smoothing.
-
-## Installation
-
-```clojure
-[codax "1.0.1-SNAPSHOT"]
-```
 
 ## Usage
 
