@@ -8,4 +8,4 @@
 (defn dec-count [x]
   (if (and (integer? x) (> x 1))
     (dec x)
-    nil))
+    0))
