@@ -2,7 +2,7 @@
 
 Codax is an idiomatic transactional embedded database for clojure. A codax database functions as a single (potentially enormous) clojure map, with a similar access & modification api.
 
-[![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
+[![Clojars Project](https://img.shields.io/clojars/v/codax.svg)](https://clojars.org/codax)
 
 ### The Why
 
