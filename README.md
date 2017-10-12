@@ -46,7 +46,7 @@ These are all similar to the clojure.core map `*-in` (e.g. `assoc-in`) with the 
 
   - their first argument is a **transaction** instead of a map
   - their second argument is a **path** (see below)
-  - their value argument or result (in the case of update) must be **conformant** (see below)
+  - their value argument or result (in the case of update) must be [conformant](#conformant-values)
 
 These must be called within a `with-write-transaction` or a `with-read-transaction` expression. Changes will only be persistent if `with-write-transaction` is used.
 
