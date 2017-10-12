@@ -1,5 +1,6 @@
 (ns codax.core
   (:require
+   [clojure.main]
    [codax.operations :as ops]
    [codax.prefix :refer [set-prefix prefix-path]]
    [codax.store :as store])
