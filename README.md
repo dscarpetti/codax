@@ -238,7 +238,7 @@ If you are interested in contributing support for additional types, please revie
 
 ### Benchmark Results
 
-**Jan 14, 1017**
+**Jan 14, 2017**
 
 The following figures are for a database populated with 16,000,000 (map-leaf) values running on a Digital Ocean 2-core 2GB RAM instance. The write transactions have an average "path" length of 6 and an average 7 leaf values.
 
