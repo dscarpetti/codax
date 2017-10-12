@@ -226,6 +226,60 @@ If you are interested in contributing support for additional types, please revie
 
 ```
 
+## Frequently Asked Questions
+
+**Why aren't all my changes being saved?**
+
+Because transactions are immutable, if an updated transaction is discarded, the transformations it contains will not be committed.
+
+_Incorrect:_
+```clojure
+(c/with-write-transaction [db tx]
+  (c/assoc-at tx [:users 1] "Alice") ; this write is "lost"
+  (c/assoc-at tx [:users 2] "Bob"))
+
+(c/get-at! db [:users]) ; {2 "Bob"}
+```
+
+_Correct:_
+```clojure
+(c/with-write-transaction [db tx]
+  (-> tx ; thread the transaction through multiple transformations
+      (c/assoc-at [:users 1] "Alice")
+      (c/assoc-at [:users 2] "Bob")))
+
+(c/get-at! db [:users]) ; {1 "Alice" 2 "Bob"}
+```
+
+**Why am I getting a NullPointerException in my Write Transaction?**
+
+A common cause is that the body of the `with-write-transaction` form is not evaluating to (returning) a transaction.
+
+_Incorrect:_
+```clojure
+(defn init-counter! []
+  (c/with-write-transaction [db tx]
+    (when-not (c/get-at tx [:counter])
+      (c/assoc-at tx [:counter] 0))))
+
+(init-counter!) ; nil (it works the first time)
+(init-counter!) ; java.lang.NullPointerException (the body evaluates to nil)
+
+```
+
+_Correct:_
+```clojure
+(defn init-counter! []
+  (c/with-write-transaction [db tx]
+    (if-not (c/get-at tx [:counter])
+      (c/assoc-at tx [:counter] 0)
+      tx))) ;; if the counter is already initialized, return the unmodified transaction
+
+(init-counter!) ; nil
+(init-counter!) ; nil
+
+```
+
 ## Performance
 
 *Codax is geared towards read-heavy workloads.*
