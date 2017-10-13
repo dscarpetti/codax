@@ -284,6 +284,11 @@
       (swap! open-databases assoc path db)
       db)))
 
+(defn connection [ path ]
+  (let [full-path (to-canonical-path-string path)
+        con (get @open-databases full-path)]
+      (or con (open-database path))))
+
 ;;;;; Transactions
 
 (defn- update-database! [{:keys [db root-id id-counter manifest]} nodes-offset manifest-delta nodes-by-address]
