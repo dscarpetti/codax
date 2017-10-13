@@ -229,60 +229,71 @@
 
 ;;; Open/Close/Destroy
 
+(defonce connection-lock (Object.))
+
 (defn close-database [path-or-db]
-  (let [path (to-canonical-path-string
-              (if (string? path-or-db)
-                path-or-db
-                (:path path-or-db)))]
-    (when-let [open-db (@open-databases path)]
-      (locking (:write-lock open-db)
-        (with-compaction-lock [open-db]
-          (when (not (:is-closed @(:data open-db)))
-            (close-file-handles open-db)
-            (reset! (:data open-db) {:is-closed true})
-            (swap! open-databases dissoc path open-db))))
-      true)))
+  (locking connection-lock
+    (let [path (to-canonical-path-string
+                (if (string? path-or-db)
+                  path-or-db
+                  (:path path-or-db)))]
+      (when-let [open-db (@open-databases path)]
+        (locking (:write-lock open-db)
+          (with-compaction-lock [open-db]
+            (when (not (:is-closed @(:data open-db)))
+              (close-file-handles open-db)
+              (reset! (:data open-db) {:is-closed true})
+              (swap! open-databases dissoc path open-db))))
+        true))))
 
 (defn destroy-database
   "Removes database files and generic archive files.
   If there is nothing else in the database directory, it is also removed."
   [path-or-db]
-  (close-database path-or-db)
-  (let [path (to-canonical-path-string
-              (if (string? path-or-db)
-                path-or-db
-                (:path path-or-db)))
-        directory (io/as-file path)
-        nodes-file (io/as-file (str path "/nodes"))
-        manifest-file (io/as-file (str path "/manifest"))
-        nodes-archive-file (io/as-file (str path "/nodes_ARCHIVE"))
-        manifest-archive-file (io/as-file (str path "/manifest_ARCHIVE"))]
-    (when (.exists nodes-file) (io/delete-file nodes-file))
-    (when (.exists manifest-file) (io/delete-file manifest-file))
-    (when (.exists nodes-archive-file) (io/delete-file nodes-archive-file))
-    (when (.exists manifest-archive-file) (io/delete-file manifest-archive-file))
-    (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
-      (io/delete-file directory))))
+  (locking connection-lock
+    (close-database path-or-db)
+    (let [path (to-canonical-path-string
+                (if (string? path-or-db)
+                  path-or-db
+                  (:path path-or-db)))
+          directory (io/as-file path)
+          nodes-file (io/as-file (str path "/nodes"))
+          manifest-file (io/as-file (str path "/manifest"))
+          nodes-archive-file (io/as-file (str path "/nodes_ARCHIVE"))
+          manifest-archive-file (io/as-file (str path "/manifest_ARCHIVE"))]
+      (when (.exists nodes-file) (io/delete-file nodes-file))
+      (when (.exists manifest-file) (io/delete-file manifest-file))
+      (when (.exists nodes-archive-file) (io/delete-file nodes-archive-file))
+      (when (.exists manifest-archive-file) (io/delete-file manifest-archive-file))
+      (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
+        (io/delete-file directory)))))
 
-(defn open-database [path & [backup-fn]]
-  (let [path (to-canonical-path-string path)]
-    (when (@open-databases path)
-      (throw (ex-info "Database Already Open" {:cause :database-open
-                                               :message "The database at this path is already open."
-                                               :path path})))
-    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-          nodes-offset (load-nodes-offset path)
-          db {:path path
-              :backup-fn backup-fn
-              :write-lock (Object.)
-              :compaction-lock (ReentrantReadWriteLock. true)
-              :metrics (atom {:opened-at (System/nanoTime)
-                              :compactions 0})
-              :data (atom {:root-id root-id
-                           :id-counter id-counter})}]
-      (initialize-database-data! db manifest nodes-offset)
-      (swap! open-databases assoc path db)
-      db)))
+(defn open-database
+  "Establishes a connection to the database if it is not yet open.
+  Fetches the database if it is already open.
+  If a backup-fn is supplied, it must be the same for every call to open-database"
+  [path & [backup-fn]]
+  (locking connection-lock
+    (let [path (to-canonical-path-string path)]
+      (if-let [open-db (@open-databases path)]
+        (if (= backup-fn (:backup-fn open-db))
+          open-db
+          (throw (ex-info "Mismatched Backup Functions" {:cause :backup-mismatch
+                                                         :message "The database was reopened with a different backup function"
+                                                         :path path})))
+        (let [{:keys [root-id id-counter manifest]} (load-manifest path)
+              nodes-offset (load-nodes-offset path)
+              db {:path path
+                  :backup-fn backup-fn
+                  :write-lock (Object.)
+                  :compaction-lock (ReentrantReadWriteLock. true)
+                  :metrics (atom {:opened-at (System/nanoTime)
+                                  :compactions 0})
+                  :data (atom {:root-id root-id
+                               :id-counter id-counter})}]
+          (initialize-database-data! db manifest nodes-offset)
+          (swap! open-databases assoc path db)
+          db)))))
 
 ;;;;; Transactions
 
