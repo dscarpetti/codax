@@ -3,7 +3,7 @@
 ## 1.1.0
 
 * thread-safe opening/closing/destroying databases
-* [TODO] make `destroy-database` function available in core namespace
+* expose `destroy-database` function in core namespace
 * [TODO] `list-databases` function - returns a list of open databases
 * [TODO] `close-all-databases` function - closes all open databases
 * [TODO] `is-open?` predicate

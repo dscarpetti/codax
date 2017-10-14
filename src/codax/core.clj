@@ -32,6 +32,15 @@
   [filepath-or-db]
   (store/close-database filepath-or-db))
 
+(defn destroy-database
+  "Removes database files and generic archive files.
+  If there is nothing else in the database directory, it is also removed.
+  If open, the database will be closed.
+
+  This function is predominantly intended to facilitate testing."
+  [filepath-or-db]
+  (store/destroy-database filepath-or-db))
+
 (defn get-at
   "Returns the map or othre value at the supplied `path`. If it has been modified within
   the current transaction, it will evaluate to the modified value
