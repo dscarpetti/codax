@@ -268,32 +268,43 @@
       (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
         (io/delete-file directory)))))
 
+(defn- existing-connection [path backup-fn]
+  (let [path (to-canonical-path-string path)
+        db (@open-databases path)]
+    (when db
+      (if (= backup-fn (:backup-fn db))
+        db
+        (throw (ex-info "Mismatched Backup Functions" {:cause :backup-mismatch
+                                                       :message "Attempted database access with a different backup function"
+                                                       :path path}))))))
+
+(defn- open-new-connection [path backup-fn]
+  (let [path (to-canonical-path-string path)
+        {:keys [root-id id-counter manifest]} (load-manifest path)
+        nodes-offset (load-nodes-offset path)
+        db {:path path
+            :backup-fn backup-fn
+            :write-lock (Object.)
+            :compaction-lock (ReentrantReadWriteLock. true)
+            :metrics (atom {:opened-at (System/nanoTime)
+                            :compactions 0})
+            :data (atom {:root-id root-id
+                         :id-counter id-counter})}]
+    (initialize-database-data! db manifest nodes-offset)
+    (swap! open-databases assoc path db)
+    db))
+
 (defn open-database
-  "Establishes a connection to the database if it is not yet open.
-  Fetches the database if it is already open.
-  If a backup-fn is supplied, it must be the same for every call to open-database"
+  "Establishes a new, or fetches the existing, connection to the database at the supplied path.
+
+  If the connection already exists, `backup-fn` must match the existing `backup-fn`.
+  To change the `backup-fn` the database must first be closed."
   [path & [backup-fn]]
   (locking connection-lock
-    (let [path (to-canonical-path-string path)]
-      (if-let [open-db (@open-databases path)]
-        (if (= backup-fn (:backup-fn open-db))
-          open-db
-          (throw (ex-info "Mismatched Backup Functions" {:cause :backup-mismatch
-                                                         :message "The database was reopened with a different backup function"
-                                                         :path path})))
-        (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-              nodes-offset (load-nodes-offset path)
-              db {:path path
-                  :backup-fn backup-fn
-                  :write-lock (Object.)
-                  :compaction-lock (ReentrantReadWriteLock. true)
-                  :metrics (atom {:opened-at (System/nanoTime)
-                                  :compactions 0})
-                  :data (atom {:root-id root-id
-                               :id-counter id-counter})}]
-          (initialize-database-data! db manifest nodes-offset)
-          (swap! open-databases assoc path db)
-          db)))))
+    (or
+     (existing-connection path backup-fn)
+     (open-new-connection path backup-fn))))
+
 
 ;;;;; Transactions
 
