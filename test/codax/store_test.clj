@@ -18,10 +18,13 @@
 (use-fixtures :each store-setup-and-teardown)
 
 (deftest attempt-reopen
+  (is (= *testing-database* (open-database (:path *testing-database*)))))
+
+(deftest attempt-reopen-with-different-backup-fn
   (is (thrown-with-msg?
        Exception
-       #"Database Already Open"
-       (open-database (:path *testing-database*)))))
+       #"Mismatched Backup Functions"
+       (open-database (:path *testing-database*) (fn [] )))))
 
 (deftest open-non-folder
   (spit "test-databases/non-folder" "content")
