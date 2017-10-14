@@ -8,7 +8,7 @@
 
 (defn open-database
   "Opens a database at the given filepath. If a database is already open at the given path
-  an Exception is thrown.
+  the existing database connection is returned.
 
   By default a set of files in the database directory with the suffix ARCHIVE are created or
   overwritten on each compaction and represent the most recent pre-compaction state.
