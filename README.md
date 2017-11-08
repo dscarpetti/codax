@@ -174,7 +174,7 @@ If you are interested in contributing support for additional types, please revie
 		  (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
-  "remove a uset"
+  "remove a user"
   [username]
   (c/with-write-transaction [db tx]
 	(when-let [user-id (c/get-at tx [:usernames username])]
