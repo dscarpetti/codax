@@ -103,7 +103,7 @@ _Example:_
 ```clojure
 (c/with-write-transaction [db tx-original]
   (let [tx-a (c/assoc-at tx-original [:letter] "a")
-       tx-b (c/assoc-at tx-original [:letter] "b")]
+        tx-b (c/assoc-at tx-original [:letter] "b")]
     tx-a))
 
 (c/get-at! db [:letter]) ; "a"
