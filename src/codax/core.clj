@@ -32,7 +32,7 @@
   [filepath-or-db]
   (store/close-database filepath-or-db))
 
-(defn destroy-database
+(defn destroy-database!
   "Removes database files and generic archive files.
   If there is nothing else in the database directory, it is also removed.
   If open, the database will be closed.
