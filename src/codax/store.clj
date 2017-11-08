@@ -246,6 +246,11 @@
               (swap! open-databases dissoc path open-db))))
         true))))
 
+(defn close-all-databases []
+  (locking connection-lock
+    (doseq [[path db] @open-databases]
+      (close-database path))))
+
 (defn destroy-database
   "Removes database files and generic archive files.
   If there is nothing else in the database directory, it is also removed."

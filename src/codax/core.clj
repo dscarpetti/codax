@@ -33,10 +33,15 @@
   (store/open-database filepath backup-fn))
 
 (defn close-database!
-  "Will close the database at the provided filepath (or the filepath of the a database map)
+  "Safely closes the database at the provided filepath (or the filepath of the a database map)
   Attempts to use a closed or invalidated database will throw an Exception."
   [filepath-or-db]
   (store/close-database filepath-or-db))
+
+(defn close-all-databases!
+  "Safely closes all open databases"
+  []
+  (store/close-all-databases))
 
 (defn destroy-database!
   "Removes database files and generic archive files.

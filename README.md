@@ -31,9 +31,10 @@ I have successfully used this library in production environments. That said, the
 **Database Functions**
 
   - `open-database!` - Opens or creates a database, or returns an existing database connection if it's already open
-  - `close-database!` - Closes an open database
-  - `destroy-database!` - Deletes a database and all its data _irretrievably_ (intended for use in tests).
+  - `close-database!` - Safely closes an open database
+  - `close-all-databases!` - Safely closes all open databases
   - `is-open?` - Checks if a database is open
+  - `destroy-database!` - Deletes a database and all its data _irretrievably_ (intended for use in tests).
 
 **Transaction Macros**
 
