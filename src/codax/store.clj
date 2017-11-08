@@ -305,6 +305,14 @@
      (existing-connection path backup-fn)
      (open-new-connection path backup-fn))))
 
+(defn is-open? [path-or-db]
+  (let [db (if (string? path-or-db)
+             (get @open-databases (to-canonical-path-string path-or-db))
+             path-or-db)]
+    (if db
+      (not (:is-closed @(:data db)))
+      false)))
+
 
 ;;;;; Transactions
 

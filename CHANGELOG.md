@@ -7,7 +7,7 @@
 * deprecate `open-database` and replace it with `open-database!`
 * deprecate `close-database` and replace it with `close-database!`
 * [TODO] `close-all-databases!` function - closes all open databases
-* [TODO] `is-open?` database predicate
+* `is-open?` database predicate
 
 ## 1.0.3 (2017-10-12)
 

@@ -6,6 +6,12 @@
    [codax.store :as store])
   (:gen-class))
 
+(defn is-open?
+  "Takes a database or a path and returns true if the database is open.
+  If the database is closed (or does not exist) false is returned."
+  [filepath-or-db]
+  (store/is-open? filepath-or-db))
+
 (defn open-database!
   "Opens a database at the given filepath. If a database is already open at the given path
   the existing database connection is returned.
