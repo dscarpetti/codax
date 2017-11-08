@@ -89,8 +89,9 @@ If you are interested in contributing support for additional types, please revie
 ### Conformant Values
 
   - non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
+    - _this will only be relevant to you if you are storing custom records or exotic datatypes. Out of the box, virtually all standard clojure datatypes are supported (i.e. you don't need to do anything special to store lists/vectors/sets/etc.)_
+    - _the serialization is performed automatically, you **do not** need to serialize values manually_
   - maps and nested maps whose **keys conform to the valid path types** listed above
-
 
 ### Transactions
 
@@ -218,7 +219,7 @@ Write transactions block other write transactions (though they do not block read
 		  (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
-  "remove a user"
+  "remove a user"
   [username]
   (c/with-write-transaction [db tx]
 	(when-let [user-id (c/get-at tx [:usernames username])]
