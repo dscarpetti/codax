@@ -6,7 +6,7 @@
    [codax.store :as store])
   (:gen-class))
 
-(defn open-database
+(defn open-database!
   "Opens a database at the given filepath. If a database is already open at the given path
   the existing database connection is returned.
 
@@ -26,7 +26,7 @@
   [filepath & {:keys [backup-fn]}]
   (store/open-database filepath backup-fn))
 
-(defn close-database
+(defn close-database!
   "Will close the database at the provided filepath (or the filepath of the a database map)
   Attempts to use a closed or invalidated database will throw an Exception."
   [filepath-or-db]
@@ -40,6 +40,20 @@
   This function is predominantly intended to facilitate testing."
   [filepath-or-db]
   (store/destroy-database filepath-or-db))
+
+(defn open-database
+  "DEPRECATED - use `open-database!` instead"
+  {:deprecated "1.1.0"}
+  [filepath & {:keys [backup-fn]}]
+  (println "WARNING: codax.core/open-database is deprecated, use codax.core/open-database! instead")
+  (open-database! filepath :backup-fn backup-fn))
+
+(defn close-database
+  "DEPRECATED - use `close-database!` instead"
+  {:deprecated "1.1.0"}
+  [filepath-or-db]
+  (println "WARNING: codax.core/close-database is deprecated, use codax.core/close-database! instead")
+  (close-database! filepath-or-db))
 
 (defn get-at
   "Returns the map or othre value at the supplied `path`. If it has been modified within

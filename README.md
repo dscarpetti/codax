@@ -30,8 +30,8 @@ I have successfully used this library in production environments. That said, the
 
 **Database Functions**
 
-  - `open-database` - Opens or creates a database, or returns an existing database connection if it's already open
-  - `close-database` - Closes an open database
+  - `open-database!` - Opens or creates a database, or returns an existing database connection if it's already open
+  - `close-database!` - Closes an open database
   - `destroy-database!` - Deletes a database and all its data _irretrievably_ (intended for use in tests).
 
 **Transaction Macros**
@@ -144,7 +144,7 @@ Write transactions block other write transactions (though they do not block read
 ### Simple Use
 ``` clojure
 
-(def db (c/open-database "data/demo-database")) ;
+(def db (c/open-database! "data/demo-database")) ;
 
 (c/assoc-at! db [:assets :people] {0 {:name "Alice"
                                       :occupation "Programmer"
@@ -170,13 +170,13 @@ Write transactions block other write transactions (though they do not block read
 ;;   :tools {"hammer" true
 ;;           "keyboard" true}}
 
-(c/close-database db)
+(c/close-database! db)
 ```
 
 ### Transaction Example
 
 ``` clojure
-(def db (c/open-database "data/demo-database"))
+(def db (c/open-database! "data/demo-database"))
 
 ;;;; init
 (c/with-write-transaction [db tx]
@@ -267,7 +267,7 @@ Write transactions block other write transactions (though they do not block read
 
 
 
-(c/close-database db)
+(c/close-database! db)
 
 ```
 

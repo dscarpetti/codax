@@ -7,7 +7,7 @@
 (def ^:dynamic *testing-database* nil)
 
 (defn store-setup-and-teardown [f]
-  (binding [*testing-database* (open-database "test-databases/core")]
+  (binding [*testing-database* (open-database! "test-databases/core")]
                                         ;(println "SETUP")
     (f))
   (destroy-database "test-databases/core"))
