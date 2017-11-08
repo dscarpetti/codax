@@ -218,7 +218,7 @@ Write transactions block other write transactions (though they do not block read
 		  (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
-  "remove a uset"
+  "remove a user"
   [username]
   (c/with-write-transaction [db tx]
 	(when-let [user-id (c/get-at tx [:usernames username])]
