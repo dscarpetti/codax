@@ -316,3 +316,28 @@
   (is (=
        (get-at! *testing-database*)
        {})))
+
+(deftest is-open?-and-close-all
+  (is (not (is-open? "test-databases/coreA")))
+  (is (not (is-open? "test-databases/coreB")))
+  (is (not (is-open? "test-databases/coreC")))
+
+  (let [a (open-database! "test-databases/coreA")
+        b (open-database! "test-databases/coreB")
+        c (open-database! "test-databases/coreC")]
+
+    (is (is-open? a))
+    (is (is-open? b))
+    (is (is-open? c))
+    (is (is-open? "test-databases/coreA"))
+    (is (is-open? "test-databases/coreB"))
+    (is (is-open? "test-databases/coreC"))
+
+    (close-all-databases!)
+
+    (is (not (is-open? a)))
+    (is (not (is-open? b)))
+    (is (not (is-open? c)))
+    (is (not (is-open? "test-databases/coreA")))
+    (is (not (is-open? "test-databases/coreB")))
+    (is (not (is-open? "test-databases/coreC")))))
