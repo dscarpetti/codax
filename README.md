@@ -100,11 +100,11 @@ If you are interested in contributing support for additional types, please revie
 Transactions are immutable. Each transformation (e.g. `assoc-at`, `update-at`) returns a new transaction, it _does not modify_ the transaction. Essentially you should treat them as you would a standard clojure map, one that you interact with using the `*-at` functions.
 
 _Example:_
-```
+```clojure
 (c/with-write-transaction [db tx-original]
   (let [tx-a (c/assoc-at tx-original [:letter] "a")
-        tx-b (c/assoc-at tx-original [:letter] "b")]
-	tx-a))
+       tx-b (c/assoc-at tx-original [:letter] "b")]
+    tx-a))
 
 (c/get-at! db [:letter]) ; "a"
 ```
@@ -120,7 +120,7 @@ _Example:_
 (c/with-write-transaction [db tx]
   (-> tx
       (c/assoc-at [:number] 1000)
-	  (c/update-at [:number] inc)))
+      (c/update-at [:number] inc)))
 
 (c/get-at! db [:number]) ; 1001
 
