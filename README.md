@@ -91,6 +91,49 @@ If you are interested in contributing support for additional types, please revie
   - non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
   - maps and nested maps whose **keys conform to the valid path types** listed above
 
+
+### Transactions
+
+**Immutability**
+
+Transactions are immutable. Each transformation (e.g. `assoc-at`, `update-at`) returns a new transaction, it _does not modify_ the transaction. Essentially you should treat them as you would a standard clojure map, one that you interact with using the `*-at` functions.
+
+_Example:_
+```
+(c/with-write-transaction [db tx-original]
+  (let [tx-a (c/assoc-at tx-original [:letter] "a")
+        tx-b (c/assoc-at tx-original [:letter] "b")]
+	tx-a))
+
+(c/get-at! db [:letter]) ; "a"
+```
+
+See the [FAQ](#frequently-asked-questions) for examples of potential pitfalls.
+
+**Visibility**
+
+Changes in a transaction are only visible to subsequent transformations on that transaction. They are not visible anywhere else until committed (by being the final result in the body of a `with-write-transaction` expression). The changes are also not visible in any read transaction opened before the write transaction is committed.
+
+_Example:_
+```clojure
+(c/with-write-transaction [db tx]
+  (-> tx
+      (c/assoc-at [:number] 1000)
+	  (c/update-at [:number] inc)))
+
+(c/get-at! db [:number]) ; 1001
+
+```
+
+**Exceptions**
+
+If an Exception is thrown within a `with-write-transaction` expression, the transaction is aborted and no changes are persisted.
+
+**Locking**
+
+Write transactions block other write transactions (though they do not block read transactions). It is best to avoid doing any computationally complex or IO heavy tasks (such as fetching remote data) inside a `with-write-transaction` block. See [Performance](#performance) for more details.
+
+
 ## Examples
 
 ``` clojure
