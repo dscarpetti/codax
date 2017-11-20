@@ -477,7 +477,7 @@
                    (loop [pairs (transient (vec (subseq (:records start-node) >= start)))
                           next-id (:next start-node)]
                      (cond
-                       (nil? next) pairs
+                       (nil? next-id) pairs
                        (and limit (>= (count pairs) limit)) pairs
                        (= next-id (:id end-node)) (reduce conj! pairs (subseq (:records end-node) <= end))
                        :else (let [next-node (get-node txn next-id)]
