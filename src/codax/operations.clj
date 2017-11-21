@@ -21,7 +21,7 @@
 (defn seek
   ([tx] (seek tx nil nil))
   ([tx path] (seek tx path path))
-  ([tx start-path end-path & {:keys [limit no-decode only-keys only-vals partial]}]
+  ([tx start-path end-path & {:keys [limit no-decode only-keys only-vals partial reverse]}]
    (let [order-char (if partial nil (char 0x00))
          start (if (empty? start-path)
                  (str (char 0x00))
@@ -29,7 +29,9 @@
          end (if (empty? end-path)
                (str (char 0xff))
                (str (pathwise/partially-encode end-path) order-char (char 0xff)))
-         results (store/b+seek tx start end :limit limit)]
+         results (if reverse
+                   (store/b+seek-reverse tx start end :limit limit)
+                   (store/b+seek tx start end :limit limit))]
      (cond
        (and no-decode only-keys) (map first results)
        no-decode results
@@ -108,13 +110,13 @@
                raw-k)))))
 
 (defn- seek-path-chunk
-  [tx lead-trim start-path end-path limit partial]
+  [tx lead-trim start-path end-path limit partial reverse]
   (let [chunk-size (if (and (number? limit) (pos? limit))
                      (max (int (* 1.5 limit)) 10)
                      nil)
         limit (if (and (number? limit)) limit -1)]
     (persistent!
-     (loop [chunk (seek tx start-path end-path :limit chunk-size :partial partial :no-decode true)
+     (loop [chunk (seek tx start-path end-path :limit chunk-size :partial partial :no-decode true :reverse reverse)
             results (transient [])
             active-key ::none
             active-data nil
@@ -129,7 +131,11 @@
            (if (= limit 0)
              complete
              (recur
-              (rest (seek tx (pathwise/decode last-key) end-path :limit chunk-size :partial partial :no-decode true))
+              (if reverse
+                (rest (seek tx start-path (pathwise/decode last-key)
+                            :limit chunk-size :partial partial :no-decode true :reverse reverse))
+                (rest (seek tx (pathwise/decode last-key) end-path
+                            :limit chunk-size :partial partial :no-decode true :reverse reverse)))
               complete
               active-key
               active-data
@@ -138,18 +144,34 @@
 
 (defn seek-path
   ([tx path limit]
-   (seek-path-chunk tx (count path) path path limit false))
+   (seek-path-chunk tx (count path) path path limit false false))
 
   ([tx path prefix limit]
    (let [seek-path (conj path prefix)]
-     (seek-path-chunk tx (count path) seek-path seek-path limit true)))
+     (seek-path-chunk tx (count path) seek-path seek-path limit true false)))
 
   ([tx path start-val end-val limit]
    (if (or (nil? end-val) (pos? (compare start-val end-val)))
      []
      (let [start-path (conj path start-val)
            end-path (if (nil? end-val) nil (conj path end-val))]
-       (seek-path-chunk tx (count path) start-path end-path limit false)))))
+       (seek-path-chunk tx (count path) start-path end-path limit false false)))))
+
+
+(defn seek-path-reverse
+  ([tx path limit]
+   (seek-path-chunk tx (count path) path path limit false true))
+
+  ([tx path prefix limit]
+   (let [seek-path (conj path prefix)]
+     (seek-path-chunk tx (count path) seek-path seek-path limit true true)))
+
+  ([tx path start-val end-val limit]
+   (if (or (nil? end-val) (pos? (compare start-val end-val)))
+     []
+     (let [start-path (conj path start-val)
+           end-path (if (nil? end-val) nil (conj path end-val))]
+       (seek-path-chunk tx (count path) start-path end-path limit false true)))))
 
 ;;;;;;;
 
