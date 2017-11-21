@@ -488,6 +488,42 @@
       (subvec results 0 limit)
       results)))
 
+
+;;; Seek Reverse
+
+(defn- track-descent
+  [txn node track k]
+  (loop [node node
+         track track]
+    (if (leaf-node? node)
+      [node track]
+      (let [pred (if (= k ::no-key)
+                   (reverse (:records node))
+                   (rsubseq (:records node) <= k))]
+        (recur (get-node txn (second (first pred)))
+               (concat (map second (rest pred)) track))))))
+
+
+(defn b+seek-reverse [txn start end & {:keys [limit]}]
+  (let [root (get-node txn (:root-id txn))
+        [node track] (track-descent txn root nil end)
+        terminal-node (get-matching-leaf txn root start)
+        results
+        (persistent!
+         (loop [node node
+                track track
+                pairs (transient (vec (rsubseq (:records node) >= start <= end)))]
+           (cond
+             (= (:id terminal-node) (:id node)) pairs
+             (and limit (>= (count pairs) limit)) pairs
+             (empty? track) pairs
+             :else (let [[node track] (track-descent txn (get-node txn (first track)) (rest track) ::no-key)
+                         pairs (reduce conj! pairs (rsubseq (:records node) >= start))]
+                     (recur node track pairs)))))]
+    (if (and limit (>= (count results) limit))
+      (subvec results 0 limit)
+      results)))
+
 ;;; Insert
 
 (defn split-records [txn {:keys [id type records] :as node}]
