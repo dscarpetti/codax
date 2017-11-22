@@ -8,6 +8,6 @@
                  [org.clojars.kliph/vijual "0.2.7"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.cache "0.6.5"]]
-  :main ^:skip-aot codax.core
+  :main codax.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
