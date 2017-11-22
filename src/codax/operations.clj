@@ -133,7 +133,7 @@
              (recur
               (if reverse
                 (rest (seek tx start-path (pathwise/decode last-key)
-                            :limit chunk-size :partial partial :no-decode true :reverse reverse))
+                            :limit chunk-size :partial false :no-decode true :reverse reverse))
                 (rest (seek tx (pathwise/decode last-key) end-path
                             :limit chunk-size :partial partial :no-decode true :reverse reverse)))
               complete
