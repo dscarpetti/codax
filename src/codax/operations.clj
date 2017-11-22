@@ -142,40 +142,27 @@
               limit))))))))
 
 
-(defn seek-path
-  ([tx path limit]
-   (seek-path-chunk tx (count path) path path limit false false))
+(defn seek-path [tx path limit reverse]
+  (seek-path-chunk tx (count path) path path limit false reverse))
 
-  ([tx path prefix limit]
-   (let [seek-path (conj path prefix)]
-     (seek-path-chunk tx (count path) seek-path seek-path limit true false)))
+(defn seek-prefix [tx path val-prefix limit reverse]
+  (let [seek-path (conj path val-prefix)]
+    (seek-path-chunk tx (count path) seek-path seek-path limit true reverse)))
 
-  ([tx path start-val end-val limit]
-   (if (or (nil? end-val) (pos? (compare start-val end-val)))
-     []
-     (let [start-path (conj path start-val)
-           end-path (if (nil? end-val) nil (conj path end-val))]
-       (seek-path-chunk tx (count path) start-path end-path limit false false)))))
+(defn seek-from [tx path start-val limit reverse]
+  (let [start-path (conj path start-val)]
+    (seek-path-chunk tx (count path) start-path nil limit false reverse)))
 
+(defn seek-to [tx path end-val limit reverse]
+  (let [end-path (conj path end-val)]
+    (seek-path-chunk tx (count path) nil end-path limit false reverse)))
 
-(defn seek-path-reverse
-  ([tx path limit]
-   (seek-path-chunk tx (count path) path path limit false true))
-
-  ([tx path prefix limit]
-   (let [seek-path (conj path prefix)]
-     (seek-path-chunk tx (count path) seek-path seek-path limit true true)))
-
-  ([tx path start-val end-val limit]
-   (if (or (nil? end-val) (pos? (compare start-val end-val)))
-     []
-     (let [start-path (conj path start-val)
-           end-path (if (nil? end-val) nil (conj path end-val))]
-       (seek-path-chunk tx (count path) start-path end-path limit false true)))))
-
-;;;;;;;
-
-
+(defn seek-range [tx path start-val end-val limit reverse]
+  (if (pos? (compare start-val end-val))
+    []
+    (let [start-path (conj path start-val)
+          end-path (conj path end-val)]
+      (seek-path-chunk tx (count path) start-path end-path limit false reverse))))
 
 ;;;;;
 
