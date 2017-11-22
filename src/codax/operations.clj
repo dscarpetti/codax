@@ -175,42 +175,6 @@
 
 ;;;;;;;
 
-(defn- assemble-seek-simple [lead-trim data]
-  (loop [raw data
-         complete []
-         active-key ::none
-         active-data nil]
-    (if (empty? raw)
-      (if (= active-key ::none)
-        complete
-        (conj complete [active-key active-data]))
-      (let [[raw-k v] (first raw)
-            [k & ks] (drop lead-trim (pathwise/decode raw-k))]
-        (if (or (= active-key k) (= active-key ::none))
-          (recur (rest raw)
-                 complete
-                 k
-                 (if (empty? ks) v (assoc-in active-data ks v)))
-          (recur (rest raw)
-                 (conj complete [active-key active-data])
-                 k
-                 (if (empty? ks) v (assoc-in {} ks v))))))))
-
-
-(defn seek-path-simple
-  ([tx path]
-   (assemble-seek-simple (count path)
-                       (seek tx path path :no-decode true)))
-  ([tx path prefix]
-   (let [seek-path (conj path prefix)]
-     (assemble-seek-simple (count path)
-                         (seek tx seek-path seek-path :no-decode true :partial true))))
-
-  ([tx path start-val end-val]
-   (let [start-path (conj path start-val)
-         end-path (conj path end-val)]
-     (assemble-seek-simple (count path)
-                         (seek tx start-path end-path :no-decode true)))))
 
 
 ;;;;;
