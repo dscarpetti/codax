@@ -116,6 +116,26 @@
   [tx path]
   (ops/delete-path tx (prefix-path tx path)))
 
+;;;;
+
+(defn seek-at [tx path & {:keys [limit reverse]}]
+  (ops/seek-path tx (prefix-path tx path) limit reverse))
+
+(defn seek-prefix [tx path val-prefix & {:keys [limit reverse]}]
+  (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
+
+(defn seek-from [tx path start-val & {:keys [limit reverse]}]
+  (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
+
+(defn seek-to [tx path end-val & {:keys [limit reverse]}]
+  (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
+
+(defn seek-range [tx path start-val end-val & {:keys [limit reverse]}]
+  (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
+
+
+
+
 ;;;; Transactions
 
 (defmacro with-write-transaction
@@ -189,6 +209,38 @@
   [db path]
   (with-result-transaction [db tx path]
     (dissoc-at tx path)))
+
+
+(defn seek-at!
+  "Wraps a `seek-at` call in a read transaction for convenience."
+  [db path & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-at tx path :limit limit :reverse reverse)))
+
+(defn seek-prefix!
+  "Wraps a `seek-prefix` call in a read transaction for convenience."
+  [db path val-prefix & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-prefix tx path val-prefix :limit limit :reverse reverse)))
+
+(defn seek-from!
+  "Wraps a `seek-from` call in a read transaction for convenience."
+  [db path start-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-from tx path start-val :limit limit :reverse reverse)))
+
+(defn seek-to!
+  "Wraps a `seek-to` call in a read transaction for convenience."
+  [db path end-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-to tx path end-val :limit limit :reverse reverse)))
+
+(defn seek-range!
+  "Wraps a `seek-range` call in a read transaction for convenience."
+  [db path start-val end-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-range tx path start-val end-val :limit limit :reverse reverse)))
+
 
 ;;;; Main
 
