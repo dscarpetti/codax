@@ -112,7 +112,7 @@
 (defn- seek-path-chunk
   [tx lead-trim start-path end-path limit partial reverse]
   (let [chunk-size (if (and (number? limit) (pos? limit))
-                     (max (int (* 1.5 limit)) 10)
+                     (max (int (* 5 limit)) 10)
                      nil)
         limit (if (and (number? limit)) limit -1)]
     (persistent!
