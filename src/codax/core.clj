@@ -67,7 +67,7 @@
   (close-database! filepath-or-db))
 
 (defn get-at
-  "Returns the map or othre value at the supplied `path`. If it has been modified within
+  "Returns the map or other value at the supplied `path`. If it has been modified within
   the current transaction, it will evaluate to the modified value
 
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
@@ -118,22 +118,51 @@
 
 ;;;;
 
-(defn seek-at [tx path & {:keys [limit reverse]}]
+(defn seek-at
+  "Provides key-value pairs ordered by key of the map at the provided `path`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path & {:keys [limit reverse]}]
   (ops/seek-path tx (prefix-path tx path) limit reverse))
 
-(defn seek-prefix [tx path val-prefix & {:keys [limit reverse]}]
+(defn seek-prefix
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys beginning with `val-prefix`.
+
+  Note: `val-prefix` should be a string or keyword.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path val-prefix & {:keys [limit reverse]}]
   (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
 
-(defn seek-from [tx path start-val & {:keys [limit reverse]}]
+(defn seek-from
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys >= `start-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-val & {:keys [limit reverse]}]
   (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
 
-(defn seek-to [tx path end-val & {:keys [limit reverse]}]
+(defn seek-to
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys <= `end-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path end-val & {:keys [limit reverse]}]
   (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
 
-(defn seek-range [tx path start-val end-val & {:keys [limit reverse]}]
+(defn seek-range
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys >= `start-val` and <= `end-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-val end-val & {:keys [limit reverse]}]
   (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
-
-
 
 
 ;;;; Transactions
