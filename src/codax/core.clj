@@ -137,6 +137,18 @@
   [tx path val-prefix & {:keys [limit reverse]}]
   (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
 
+(defn seek-prefix-range
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys beginning with a prefix between `start-prefix` & `end-prefix`
+
+  Note: `start-prefix` & `end-prefix` should be strings or keywords.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-prefix end-prefix & {:keys [limit reverse]}]
+  (ops/seek-prefix-range tx (prefix-path tx path) start-prefix end-prefix limit reverse))
+
+
 (defn seek-from
   "Provides key-value pairs ordered by key of the map at the provided `path`
   for all keys >= `start-val`.
@@ -251,6 +263,12 @@
   [db path val-prefix & {:keys [limit reverse]}]
   (with-read-transaction [db tx]
     (seek-prefix tx path val-prefix :limit limit :reverse reverse)))
+
+(defn seek-prefix-range!
+  "Wraps a `seek-prefix-range` call in a read transaction for convenience."
+  [db path start-prefix end-prefix & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-prefix-range tx path start-prefix end-prefix :limit limit :reverse reverse)))
 
 (defn seek-from!
   "Wraps a `seek-from` call in a read transaction for convenience."

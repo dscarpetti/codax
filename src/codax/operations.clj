@@ -149,6 +149,11 @@
   (let [seek-path (conj path val-prefix)]
     (seek-path-chunk tx (count path) seek-path seek-path limit true reverse)))
 
+(defn seek-prefix-range [tx path start-prefix end-prefix limit reverse]
+  (if (pos? (compare start-prefix end-prefix))
+    []
+    (seek-path-chunk tx (count path) (conj path start-prefix) (conj path end-prefix) limit true reverse)))
+
 (defn seek-from [tx path start-val limit reverse]
   (let [start-path (conj path start-val)]
     (seek-path-chunk tx (count path) start-path path limit false reverse)))
