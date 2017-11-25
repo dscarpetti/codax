@@ -151,11 +151,11 @@
 
 (defn seek-from [tx path start-val limit reverse]
   (let [start-path (conj path start-val)]
-    (seek-path-chunk tx (count path) start-path nil limit false reverse)))
+    (seek-path-chunk tx (count path) start-path path limit false reverse)))
 
 (defn seek-to [tx path end-val limit reverse]
   (let [end-path (conj path end-val)]
-    (seek-path-chunk tx (count path) nil end-path limit false reverse)))
+    (seek-path-chunk tx (count path) path end-path limit false reverse)))
 
 (defn seek-range [tx path start-val end-val limit reverse]
   (if (pos? (compare start-val end-val))
