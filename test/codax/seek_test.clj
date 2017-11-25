@@ -101,6 +101,8 @@
      (let [~'prefix-path ~prefix-path
            ~'dataset ~dataset-data
            ~'db (atom (open-database! "test-databases/seek"))]
+       (assoc-at! @~'db [nil nil] nil)
+       (assoc-at! @~'db [[] nil] nil)
        (tell-time
         [[:purple] "populating db with" (count ~'dataset) "records"]
         (with-write-transaction [@~'db tx#]
