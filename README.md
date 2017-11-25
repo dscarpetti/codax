@@ -69,6 +69,19 @@ These are the same as the transactional-functions except that their first argume
   - `merge-at!`
   - `dissoc-at!`
 
+**Seek Functions**
+
+These allow you to get ordered subsets of data from the database "map" in the form of ordered key-value pairs. Each accepts optional `:limit` and `:reverse` keyword parameters. They follow the same naming conventions of the other functions (plain variants expect a `tx` argument and `!` variants expect a `db` argument).
+
+  - `seek-at` & `seek-at!` - get ordered key-value pairs from the map at the provided `path`
+  - `seek-from` & `seek-from!` - get ordered key-value pairs from the map at the provided path for keys >= `start-val`
+  - `seek-to` & `seek-to!` - get ordered key-value pairs from the map at the provided path for keys <= `end-val`
+  - `seek-range` & `seek-range!` - get ordered key-value pairs from the map at the provided path for keys >= `start-val` and <= `end-val`
+  - `seek-prefix` & `seek-prefix!` - get ordered key-value pairs from the map at the provided path for **string or keyword** keys which begin with `val-prefix`
+  - `seek-prefix-range` & `seek-prefix-range!` - get ordered key-value pairs from the map at the provided path for **string or keyword** keys which begin with a value between (inclusive) `start-prefix` & `end-prefix`
+
+See [Seek Examples](#seek-examples)
+
 ### Paths
 A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions:
 
@@ -248,7 +261,7 @@ Write transactions block other write transactions (though they do not block read
 ;;  {:counters {:id 2, :users 2},
 ;;   :usernames {"charlie" 0, "diane" 1},
 ;;   :users
-;;   {0 {:id 0, :timestamp 1484529603440, :username "charlie"},
+;;   {0 {:id 0, :timestamp 1484529469567, :username "charlie"},
 ;;    1 {:id 1, :timestamp 1484529603444, :username "diane"}}}
 
 
@@ -257,17 +270,175 @@ Write transactions block other write transactions (though they do not block read
 ;;  {:counters {:id 2, :users 2},
 ;;   :usernames {"chuck" 0, "diane" 1},
 ;;   :users
-;;   {0 {:id 0, :timestamp 1484529702868, :username "chuck"},
-;;    1 {:id 1, :timestamp 1484529702872, :username "diane"}}}
+;;   {0 {:id 0, :timestamp 1484529469567, :username "chuck"},
+;;    1 {:id 1, :timestamp 1484529603444, :username "diane"}}}
 
 
 (remove-user "diane") ; nil
 (c/get-at! db)
 ;;  {:counters {:id 2, :users 1},
 ;;   :usernames {"chuck" 0, "diane" 1},
-;;   :users {0 {:id 0, :timestamp 1484529782527, :username "chuck"}}}
+;;   :users {0 {:id 0, :timestamp 1484529469567, :username "chuck"}}}
 
 
+
+(c/close-database! db)
+
+```
+
+### Seek Examples
+
+**Directory Example**
+
+``` clojure
+(def db (c/open-database! "data/example-database"))
+
+(c/assoc-at! db [:directory]
+             {"Alice" {:ext 247, :dept "qa"}
+              "Barbara" {:ext 228, :dept "qa"}
+              "Damian" {:ext 476, :dept "hr"}
+              "Adam" {:ext 357, :dept "hr"}
+              "Frank" {:ext 113, :dept "hr"}
+              "Bill" {:ext 234, :dept "sales"}
+              "Evelyn" {:ext 337, :dept "dev"}
+              "Chuck" {:ext 482, :dept "sales"}
+              "Emily" {:ext 435, :dept "dev"}
+              "Diane" {:ext 245, :dept "dev"}
+              "Chelsea" {:ext 345, :dept "qa"}
+              "Bob" {:ext 326, :dept "sales"}})
+
+;; - seek-at -
+
+(c/seek-at! db [:directory])
+;;[["Adam" {:dept "hr", :ext 357}]
+;; ["Alice" {:dept "qa", :ext 247}]
+;; ["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]
+;; ["Chelsea" {:dept "qa", :ext 345}]
+;; ["Chuck" {:dept "sales", :ext 482}]
+;; ["Damian" {:dept "hr", :ext 476}]
+;; ["Diane" {:dept "dev", :ext 245}]
+;; ["Emily" {:dept "dev", :ext 435}]
+;; ["Evelyn" {:dept "dev", :ext 337}]
+;; ["Frank" {:dept "hr", :ext 113}]]
+
+(c/seek-at! db [:directory] :limit 3)
+;;[["Adam" {:dept "hr", :ext 357}]
+;; ["Alice" {:dept "qa", :ext 247}]
+;; ["Barbara" {:dept "qa", :ext 228}]]
+
+(c/seek-at! db [:directory] :limit 3 :reverse true)
+;;[["Frank" {:ext 113, :dept "hr"}]
+;; ["Evelyn" {:ext 337, :dept "dev"}]
+;; ["Emily" {:ext 435, :dept "dev"}]]
+
+
+;; - seek-prefix -
+
+(c/seek-prefix! db [:directory] "B")
+;;[["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]]
+
+
+;; - seek-prefix-range -
+
+(c/seek-prefix-range! db [:directory] "B" "D")
+;;[["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]
+;; ["Chelsea" {:dept "qa", :ext 345}]
+;; ["Chuck" {:dept "sales", :ext 482}]
+;; ["Damian" {:dept "hr", :ext 476}]
+;; ["Diane" {:dept "dev", :ext 245}]]
+
+
+(c/close-database! db)
+
+```
+
+**Messaging Example**
+
+```clojure
+(def db (c/open-database! "data/example-database")) ;
+
+(defn to-instant [s]
+  (java.time.Instant/ofEpochMilli (java.util.Date/parse s)))
+
+(defn post-message!
+  ([user body]
+   (post-message! (java.time.Instant/now) user body))
+  ([inst user body]
+   (c/assoc-at! db [:messages inst] {:user user
+                                     :body body})))
+
+(defn process-messages
+  [messages]
+  (map (fn [[inst m]] (assoc m :time (str inst))) messages))
+
+
+(defn get-messages-before [ts]
+  (process-messages
+   (c/seek-to! db [:messages] ts)))
+
+(defn get-messages-after [ts]
+  (process-messages
+   (c/seek-from! db [:messages] ts)))
+
+(defn get-messages-between [start-ts end-ts]
+  (process-messages
+   (c/seek-range! db [:messages] start-ts end-ts)))
+
+(defn get-recent-messages [n]
+  (-> (c/seek-at! db [:messages] :limit n :reverse true)
+      process-messages ;;
+      reverse)); we reverse the result because we want the messages to be in chronological order
+               ; but we needed to use the :reverse seek parameter to prevent collecting all
+               ; of the messages from the beginning of time (there could be many thousands!)
+
+
+
+(defn simulate-message! [date-time-string user body]
+  (post-message! (to-instant date-time-string) user body))
+
+(simulate-message! "June 6, 2020 11:01" "Bobby" "Hello")
+(simulate-message! "June 6, 2020 11:02" "Alice" "Welcome, Bobby")
+(simulate-message! "June 6, 2020 11:03" "Bobby" "I was wondering how codax seeking works?")
+(simulate-message! "June 6, 2020 11:07" "Alice" "Please be more specific, have you read the docs/examples?")
+(simulate-message! "June 6, 2020 11:08" "Bobby" "Oh, I guess I should do that.")
+
+(simulate-message! "June 7, 2020 14:30" "Chuck" "Anybody here?")
+(simulate-message! "June 7, 2020 14:35" "Chuck" "Guess not...")
+
+(simulate-message! "June 8, 2020 16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
+(simulate-message! "June 8, 2020 16:55" "Alice" "Basically, it seeks from the end and works backwards")
+(simulate-message! "June 8, 2020 16:56" "Bobby" "Why would I do that?")
+(simulate-message! "June 8, 2020 16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
+
+
+(get-recent-messages 3)
+;;({:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+
+(get-messages-after (to-instant "June 7, 2020 14:32"))
+;;({:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."}
+;; {:user "Bobby" :time "2020-06-08T22:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
+;; {:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+
+(get-messages-before (to-instant "June 6, 2020 11:05"))
+;;({:user "Bobby" :time "2020-06-06T17:01:00Z" :body "Hello"}
+;; {:user "Alice" :time "2020-06-06T17:02:00Z" :body "Welcome, Bobby"}
+;; {:user "Bobby" :time "2020-06-06T17:03:00Z" :body "I was wondering how codax seeking works?"})
+
+
+(get-messages-between (to-instant "June 7, 2020")
+                      (to-instant "June 7, 2020 23:59"))
+;;({:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
+;; {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})
 
 (c/close-database! db)
 
