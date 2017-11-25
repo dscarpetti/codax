@@ -5,7 +5,7 @@
    [clojure.test :as t :refer :all]
    [codax.core :refer :all]))
 
-(def ^:dynamic *logging* true)
+(def ^:dynamic *logging* false)
 
 (def ansi-color-table
   {:reset "\u001B[0m"
