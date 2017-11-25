@@ -205,8 +205,12 @@
 (def string-dataset-medium (create-string-dataset 5 8))
 (def string-dataset-large (create-string-dataset 8 8))
 
-(def-seek-test tiny-alpha-test [[:alphabet] string-dataset-tiny]
-  (test-seek-at* [nil 10 100])
+
+
+(def-seek-test tiny-alpha-at [[:alphabet] string-dataset-tiny]
+  (test-seek-at* [nil 10 100]))
+
+(def-seek-test tiny-alpha-prefix [[:alphabet] string-dataset-tiny]
   (test-seek-prefix* "a" [nil 10 100])
   (test-seek-prefix* "aa" [nil 10 100])
   (test-seek-prefix* "aaa" [nil 10 100])
@@ -220,24 +224,27 @@
   (test-seek-prefix* "f" [nil 10 100])
   (test-seek-prefix* "g" [nil 10 100])
   (test-seek-prefix* "A" [nil 10 100])
-  (test-seek-prefix* "" [nil 10 100])
+  (test-seek-prefix* "" [nil 10 100]))
 
+(def-seek-test tiny-alpha-from [[:alphabet] string-dataset-tiny]
   (test-seek-from* "A" [nil 10 100])
   (test-seek-from* "0" [nil 10 100])
   (test-seek-from* "b" [nil 10 100])
   (test-seek-from* "z" [nil 10 100])
   (test-seek-from* "b" [nil 10 100])
   (test-seek-from* "ab" [nil 10 100])
-  (test-seek-from* "cc" [nil 10 100])
+  (test-seek-from* "cc" [nil 10 100]))
 
+(def-seek-test tiny-alpha-to [[:alphabet] string-dataset-tiny]
   (test-seek-to* "A" [nil 10 100])
   (test-seek-to* "0" [nil 10 100])
   (test-seek-to* "b" [nil 10 100])
   (test-seek-to* "z" [nil 10 100])
   (test-seek-to* "b" [nil 10 100])
   (test-seek-to* "ab" [nil 10 100])
-  (test-seek-to* "cc" [nil 10 100])
+  (test-seek-to* "cc" [nil 10 100]))
 
+(def-seek-test tiny-alpha-range [[:alphabet] string-dataset-tiny]
   (test-seek-range* "a" "c" [nil 10 100])
   (test-seek-range* "b" "c" [nil 10 100])
   (test-seek-range* "a" "b" [nil 10 100])
@@ -249,9 +256,10 @@
   (test-seek-range* "x" "z" [nil 10 100]))
 
 
-(def-seek-test small-alpha-test [[:alphabet] string-dataset-small]
-  (test-seek-at* [nil 10 100])
+(def-seek-test small-alpha-at [[:alphabet] string-dataset-small]
+  (test-seek-at* [nil 10 100]))
 
+(def-seek-test small-alpha-prefix [[:alphabet] string-dataset-small]
   (test-seek-prefix* "a" [nil 10 100])
   (test-seek-prefix* "aa" [nil 10 100])
   (test-seek-prefix* "aaa" [nil 10 100])
@@ -265,26 +273,28 @@
   (test-seek-prefix* "f" [nil 10 100])
   (test-seek-prefix* "g" [nil 10 100])
   (test-seek-prefix* "A" [nil 10 100])
-  (test-seek-prefix* "" [nil 10 100])
+  (test-seek-prefix* "" [nil 10 100]))
 
-
+(def-seek-test small-alpha-from [[:alphabet] string-dataset-small]
   (test-seek-from* "A" [nil 10 100])
   (test-seek-from* "0" [nil 10 100])
   (test-seek-from* "b" [nil 10 100])
   (test-seek-from* "z" [nil 10 100])
   (test-seek-from* "b" [nil 10 100])
   (test-seek-from* "ab" [nil 10 100])
-  (test-seek-from* "cc" [nil 10 100])
+  (test-seek-from* "cc" [nil 10 100]))
 
+(def-seek-test small-alpha-to [[:alphabet] string-dataset-small]
   (test-seek-to* "A" [nil 10 100])
   (test-seek-to* "0" [nil 10 100])
   (test-seek-to* "b" [nil 10 100])
   (test-seek-to* "z" [nil 10 100])
   (test-seek-to* "b" [nil 10 100])
   (test-seek-to* "ab" [nil 10 100])
-  (test-seek-to* "cc" [nil 10 100])
+  (test-seek-to* "cc" [nil 10 100]))
 
 
+(def-seek-test small-alpha-range [[:alphabet] string-dataset-small]
   (test-seek-range* "a" "c" [nil 10 100])
   (test-seek-range* "b" "c" [nil 10 100])
   (test-seek-range* "a" "b" [nil 10 100])
@@ -297,9 +307,10 @@
 
   (test-seek-range* "e" "a" [nil 10 100]))
 
-(def-seek-test medium-alpha-test-1 [["alphabet"] string-dataset-medium]
-  (test-seek-at* [nil 10 100 1000])
+(def-seek-test medium-alpha-test-at [["alphabet"] string-dataset-medium]
+  (test-seek-at* [nil 10 100 1000]))
 
+(def-seek-test medium-alpha-test-prefix [["alphabet"] string-dataset-medium]
   (test-seek-prefix* "a" [nil 10 100 1000])
   (test-seek-prefix* "aa" [nil 10 100 1000])
   (test-seek-prefix* "aaa" [nil 10 100 1000])
@@ -313,16 +324,18 @@
   (test-seek-prefix* "f" [nil 10 100 1000])
   (test-seek-prefix* "g" [nil 10 100 1000])
   (test-seek-prefix* "A" [nil 10 100 1000])
-  (test-seek-prefix* "" [nil 10 100 1000])
+  (test-seek-prefix* "" [nil 10 100 1000]))
 
-
+(def-seek-test medium-alpha-test-from [["alphabet"] string-dataset-medium]
   (test-seek-from* "A" [nil 10 100 1000])
   (test-seek-from* "0" [nil 10 100 1000])
   (test-seek-from* "b" [nil 10 100 1000])
   (test-seek-from* "z" [nil 10 100 1000])
   (test-seek-from* "b" [nil 10 100 1000])
   (test-seek-from* "ab" [nil 10 100 1000])
-  (test-seek-from* "cc" [nil 10 100 1000])
+  (test-seek-from* "cc" [nil 10 100 1000]))
+
+(def-seek-test medium-alpha-test-to [["alphabet"] string-dataset-medium]
 
   (test-seek-to* "A" [nil 10 100 1000])
   (test-seek-to* "0" [nil 10 100 1000])
@@ -332,7 +345,7 @@
   (test-seek-to* "ab" [nil 10 100 1000])
   (test-seek-to* "cc" [nil 10 100 1000]))
 
-(def-seek-test medium-alpha-test-2 [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-test-range [["alphabet"] string-dataset-medium]
   (test-seek-range* "a" "c" [nil 10 100 1000])
   (test-seek-range* "b" "c" [nil 10 100 1000])
   (test-seek-range* "a" "b" [nil 10 100 1000])
@@ -393,13 +406,13 @@
        (when (zero? (+ (mod n1# 100) (mod n2# 100))) (logln [:green] "range" n1# n2#))
        (test-seek-range* n1# n2# ~limits))))
 
-
+(comment
 (def-seek-test exhaustive-one-level [[:numbers] (create-numeric-dataset 45)]
   (test-seek-at* [nil 10 100 500])
   (num-seek-from 90)
   (num-seek-to 90)
   (num-seek-range 90))
-
+)
 
 (comment
 
