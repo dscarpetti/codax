@@ -67,8 +67,21 @@
   (finalize-sim-op dataset limit reverse))
 
 (defn sim-seek-prefix [dataset val-prefix & {:keys [limit reverse]}]
-  (finalize-sim-op (filter #(re-matches (re-pattern (str "^" val-prefix ".*")) (first %)) dataset)
+  (finalize-sim-op (filter #(and
+                             (>= 0 (compare val-prefix (first %)))
+                             (<= 0 (compare (str val-prefix (char 0xff)) (first %))))
+                           dataset)
                    limit reverse))
+
+(defn sim-seek-prefix-range [dataset start-prefix end-prefix & {:keys [limit reverse]}]
+  (if (pos? (compare start-prefix end-prefix))
+    []
+    (finalize-sim-op (filter #(and
+                               (>= 0 (compare start-prefix (first %)))
+                               (<= 0 (compare (str end-prefix (char 0xff)) (first %))))
+                             dataset)
+                     limit reverse)))
+
 
 (defn sim-seek-from [dataset start-val & {:keys [limit reverse]}]
   (finalize-sim-op (filter #(>= 0 (compare start-val (first %))) dataset)
@@ -137,6 +150,21 @@
   `(do ~@(reduce (fn [ls# limit#] (conj ls#
                                         `(test-seek-prefix ~val-prefix ~limit# false)
                                         `(test-seek-prefix ~val-prefix ~limit# true)))
+               [] limits)))
+
+
+(defmacro test-seek-prefix-range [start-prefix end-prefix limit reverse]
+  `(let [control-result# (sim-seek-prefix-range ~'dataset ~start-prefix ~end-prefix :limit ~limit :reverse ~reverse)
+         test-result# (seek-prefix-range! @~'db ~'prefix-path ~start-prefix ~end-prefix :limit ~limit :reverse ~reverse)]
+     (logln [:purple] "test-seek-prefix-range" "start-prefix:" ~start-prefix "end-prefix" ~end-prefix "limit:" ~limit "reverse:" ~reverse)
+     (logln [:blue] "rslt:" (count test-result#) (map first (take *logged-result-length* test-result#)))
+     (logln [:yellow] "ctrl:" (count control-result#) (map first (take *logged-result-length* control-result#)))
+     (is (= test-result# control-result#) ["test-seek-prefix-range" "start-prefix:" ~start-prefix "end-prefix:" ~end-prefix "limit:" ~limit "reverse:" ~reverse])))
+
+(defmacro test-seek-prefix-range* [start-prefix end-prefix limits]
+  `(do ~@(reduce (fn [ls# limit#] (conj ls#
+                                        `(test-seek-prefix-range ~start-prefix ~end-prefix ~limit# false)
+                                        `(test-seek-prefix-range ~start-prefix ~end-prefix ~limit# true)))
                [] limits)))
 
 
@@ -226,6 +254,24 @@
   (test-seek-prefix* "A" [nil 10 100])
   (test-seek-prefix* "" [nil 10 100]))
 
+
+(def-seek-test tiny-alpha-prefix-range [[:alphabet] string-dataset-tiny]
+  (test-seek-prefix-range* "a" "b" [nil 10 100])
+  (test-seek-prefix-range* "aa" "bb" [nil 10 100])
+  (test-seek-prefix-range* "aaa" "b" [nil 10 100])
+  (test-seek-prefix-range* "ba" "bb" [nil 10 100])
+  (test-seek-prefix-range* "ba" "baa" [nil 10 100])
+  (test-seek-prefix-range* "baa" "ba" [nil 10 100])
+  (test-seek-prefix-range* "0" "0" [nil 10 100])
+  (test-seek-prefix-range* "b" "d" [nil 10 100])
+  (test-seek-prefix-range* "z" "z" [nil 10 100])
+  (test-seek-prefix-range* "a" "z" [nil 10 100])
+  (test-seek-prefix-range* "A" "a" [nil 10 100])
+  (test-seek-prefix-range* "b" "c" [nil 10 100])
+  (test-seek-prefix-range* "z" "a" [nil 10 100])
+  (test-seek-prefix-range* "b" "d" [nil 10 100]))
+
+
 (def-seek-test tiny-alpha-from [[:alphabet] string-dataset-tiny]
   (test-seek-from* "A" [nil 10 100])
   (test-seek-from* "0" [nil 10 100])
@@ -273,7 +319,26 @@
   (test-seek-prefix* "f" [nil 10 100])
   (test-seek-prefix* "g" [nil 10 100])
   (test-seek-prefix* "A" [nil 10 100])
+
   (test-seek-prefix* "" [nil 10 100]))
+
+
+(def-seek-test small-alpha-prefix-range [[:alphabet] string-dataset-small]
+  (test-seek-prefix-range* "a" "b" [nil 10 100])
+  (test-seek-prefix-range* "aa" "bb" [nil 10 100])
+  (test-seek-prefix-range* "aaa" "b" [nil 10 100])
+  (test-seek-prefix-range* "ba" "bb" [nil 10 100])
+  (test-seek-prefix-range* "ba" "baa" [nil 10 100])
+  (test-seek-prefix-range* "baa" "ba" [nil 10 100])
+  (test-seek-prefix-range* "0" "0" [nil 10 100])
+  (test-seek-prefix-range* "b" "d" [nil 10 100])
+  (test-seek-prefix-range* "z" "z" [nil 10 100])
+  (test-seek-prefix-range* "a" "z" [nil 10 100])
+  (test-seek-prefix-range* "A" "a" [nil 10 100])
+  (test-seek-prefix-range* "b" "c" [nil 10 100])
+  (test-seek-prefix-range* "z" "a" [nil 10 100])
+  (test-seek-prefix-range* "b" "d" [nil 10 100]))
+
 
 (def-seek-test small-alpha-from [[:alphabet] string-dataset-small]
   (test-seek-from* "A" [nil 10 100])
@@ -307,10 +372,10 @@
 
   (test-seek-range* "e" "a" [nil 10 100]))
 
-(def-seek-test medium-alpha-test-at [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-at [["alphabet"] string-dataset-medium]
   (test-seek-at* [nil 10 100 1000]))
 
-(def-seek-test medium-alpha-test-prefix [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-prefix [["alphabet"] string-dataset-medium]
   (test-seek-prefix* "a" [nil 10 100 1000])
   (test-seek-prefix* "aa" [nil 10 100 1000])
   (test-seek-prefix* "aaa" [nil 10 100 1000])
@@ -326,7 +391,23 @@
   (test-seek-prefix* "A" [nil 10 100 1000])
   (test-seek-prefix* "" [nil 10 100 1000]))
 
-(def-seek-test medium-alpha-test-from [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-prefix-range [["alphabet"] string-dataset-medium]
+  (test-seek-prefix-range* "a" "b" [nil 10 100 1000])
+  (test-seek-prefix-range* "aa" "bb" [nil 10 100 1000])
+  (test-seek-prefix-range* "aaa" "b" [nil 10 100 1000])
+  (test-seek-prefix-range* "ba" "bb" [nil 10 100 1000])
+  (test-seek-prefix-range* "ba" "baa" [nil 10 100 1000])
+  (test-seek-prefix-range* "baa" "ba" [nil 10 100 1000])
+  (test-seek-prefix-range* "0" "0" [nil 10 100 1000])
+  (test-seek-prefix-range* "b" "d" [nil 10 100 1000])
+  (test-seek-prefix-range* "z" "z" [nil 10 100 1000])
+  (test-seek-prefix-range* "a" "z" [nil 10 100 1000])
+  (test-seek-prefix-range* "A" "a" [nil 10 100 1000])
+  (test-seek-prefix-range* "b" "c" [nil 10 100 1000])
+  (test-seek-prefix-range* "z" "a" [nil 10 100 1000])
+  (test-seek-prefix-range* "b" "d" [nil 10 100 1000]))
+
+(def-seek-test medium-alpha-from [["alphabet"] string-dataset-medium]
   (test-seek-from* "A" [nil 10 100 1000])
   (test-seek-from* "0" [nil 10 100 1000])
   (test-seek-from* "b" [nil 10 100 1000])
@@ -335,7 +416,7 @@
   (test-seek-from* "ab" [nil 10 100 1000])
   (test-seek-from* "cc" [nil 10 100 1000]))
 
-(def-seek-test medium-alpha-test-to [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-to [["alphabet"] string-dataset-medium]
 
   (test-seek-to* "A" [nil 10 100 1000])
   (test-seek-to* "0" [nil 10 100 1000])
@@ -345,7 +426,7 @@
   (test-seek-to* "ab" [nil 10 100 1000])
   (test-seek-to* "cc" [nil 10 100 1000]))
 
-(def-seek-test medium-alpha-test-range [["alphabet"] string-dataset-medium]
+(def-seek-test medium-alpha-range [["alphabet"] string-dataset-medium]
   (test-seek-range* "a" "c" [nil 10 100 1000])
   (test-seek-range* "b" "c" [nil 10 100 1000])
   (test-seek-range* "a" "b" [nil 10 100 1000])
