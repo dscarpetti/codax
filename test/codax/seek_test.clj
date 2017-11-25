@@ -208,7 +208,12 @@
 (def-seek-test tiny-alpha-test [[:alphabet] string-dataset-tiny]
   (test-seek-at* [nil 10 100])
   (test-seek-prefix* "a" [nil 10 100])
+  (test-seek-prefix* "aa" [nil 10 100])
+  (test-seek-prefix* "aaa" [nil 10 100])
   (test-seek-prefix* "b" [nil 10 100])
+  (test-seek-prefix* "bb" [nil 10 100])
+  (test-seek-prefix* "bbb" [nil 10 100])
+
   (test-seek-prefix* "c" [nil 10 100])
   (test-seek-prefix* "d" [nil 10 100])
   (test-seek-prefix* "e" [nil 10 100])
@@ -246,8 +251,14 @@
 
 (def-seek-test small-alpha-test [[:alphabet] string-dataset-small]
   (test-seek-at* [nil 10 100])
+
   (test-seek-prefix* "a" [nil 10 100])
+  (test-seek-prefix* "aa" [nil 10 100])
+  (test-seek-prefix* "aaa" [nil 10 100])
   (test-seek-prefix* "b" [nil 10 100])
+  (test-seek-prefix* "bb" [nil 10 100])
+  (test-seek-prefix* "bbb" [nil 10 100])
+
   (test-seek-prefix* "c" [nil 10 100])
   (test-seek-prefix* "d" [nil 10 100])
   (test-seek-prefix* "e" [nil 10 100])
@@ -290,7 +301,12 @@
   (test-seek-at* [nil 10 100 1000])
 
   (test-seek-prefix* "a" [nil 10 100 1000])
+  (test-seek-prefix* "aa" [nil 10 100 1000])
+  (test-seek-prefix* "aaa" [nil 10 100 1000])
   (test-seek-prefix* "b" [nil 10 100 1000])
+  (test-seek-prefix* "bb" [nil 10 100 1000])
+  (test-seek-prefix* "bbb" [nil 10 100 1000])
+
   (test-seek-prefix* "c" [nil 10 100 1000])
   (test-seek-prefix* "d" [nil 10 100 1000])
   (test-seek-prefix* "e" [nil 10 100 1000])
