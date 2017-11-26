@@ -287,7 +287,8 @@
   (let [path (to-canonical-path-string path)
         {:keys [root-id id-counter manifest]} (load-manifest path)
         nodes-offset (load-nodes-offset path)
-        db {:path path
+        db {:codax.store/is-database true
+            :path path
             :backup-fn backup-fn
             :write-lock (Object.)
             :compaction-lock (ReentrantReadWriteLock. true)
@@ -388,7 +389,8 @@
     (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-transaction
                                                        :message "The database object has been invalidated."
                                                        :path (:path database)})))
-    {:db database
+    {:codax.store/is-transaction true
+     :db database
      :root-id root-id
      :id-counter id-counter
      :nodes-offset nodes-offset
@@ -397,14 +399,28 @@
 
 ;;; Macros
 
+(defn assert-db [db & [msg]]
+  (when (not (and (map? db) (:codax.store/is-database db)))
+    (throw (ex-info "Invalid Database" {:cause :invalid-database
+                                        :message (or msg "expected a database")}))))
+
+(defn assert-txn [txn & [msg]]
+  (when (not (and (map? txn) (:codax.store/is-transaction txn)))
+    (throw (ex-info "Invalid Transaction" {:cause :invalid-transaction
+                                           :message (or msg "expected a transaction")}))))
+
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
+     (assert-db db#)
      (locking (:write-lock db#)
-       (let [~tx-symbol (make-transaction db#)]
-         (commit! (do ~@body))))))
+       (let [~tx-symbol (make-transaction db#)
+             result-tx# (do ~@body)]
+         (assert-txn result-tx#  "the body of `with-write-transaction` must evaluate to a transaction")
+         (commit! result-tx#)))))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
+     (assert-db db#)
      (with-read-lock [db#]
        (let [~tx-symbol (make-transaction db#)]
          ~@body))))
