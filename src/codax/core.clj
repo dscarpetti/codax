@@ -73,8 +73,10 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   ([tx]
+   (store/assert-txn tx)
    (ops/collect tx []))
   ([tx path]
+   (store/assert-txn tx)
    (ops/collect tx (prefix-path tx path))))
 
 (defn assoc-at
@@ -87,6 +89,7 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path val-or-map]
+  (store/assert-txn tx)
   (ops/assoc-path tx (prefix-path tx path) val-or-map))
 
 (defn update-at
@@ -98,10 +101,12 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path f & args]
+  (store/assert-txn tx)
   (apply ops/update-path tx (prefix-path tx path) f args))
 
 (defn merge-at
   [tx path m]
+  (store/assert-txn tx)
   (apply ops/update-path tx (prefix-path tx path) merge m))
 
 
@@ -114,6 +119,7 @@
   The path will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path]
+  (store/assert-txn tx)
   (ops/delete-path tx (prefix-path tx path)))
 
 ;;;;
@@ -124,6 +130,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-path tx (prefix-path tx path) limit reverse))
 
 (defn seek-prefix
@@ -135,6 +142,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path val-prefix & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
 
 (defn seek-prefix-range
@@ -146,6 +154,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path start-prefix end-prefix & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-prefix-range tx (prefix-path tx path) start-prefix end-prefix limit reverse))
 
 
@@ -156,6 +165,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path start-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
 
 (defn seek-to
@@ -165,6 +175,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path end-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
 
 (defn seek-range
@@ -174,6 +185,7 @@
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path start-val end-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
   (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
 
 
