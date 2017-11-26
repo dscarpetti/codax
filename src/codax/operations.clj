@@ -88,6 +88,13 @@
 
 ;;;;;;;;;;;;
 
+
+(defn- seek-chunk [tx start end chunk-size reverse]
+  (if reverse
+    (store/b+seek-reverse tx start end :limit chunk-size)
+    (store/b+seek tx start end :limit chunk-size)))
+
+
 (defn- assemble-chunk [lead-trim data complete active-key active-data limit last-key]
   (if (or (= limit 0) (empty? data))
     [complete active-key active-data limit last-key]
@@ -110,13 +117,13 @@
                raw-k)))))
 
 (defn- seek-path-chunk
-  [tx lead-trim start-path end-path limit partial reverse]
+  [tx lead-trim start end limit reverse]
   (let [chunk-size (if (and (number? limit) (pos? limit))
-                     (max (int (* 5 limit)) 10)
+                     (max (int limit) 10)
                      nil)
         limit (if (and (number? limit)) limit -1)]
     (persistent!
-     (loop [chunk (seek tx start-path end-path :limit chunk-size :partial partial :no-decode true :reverse reverse)
+     (loop [chunk (seek-chunk tx start end chunk-size reverse)
             results (transient [])
             active-key ::none
             active-data nil
@@ -132,42 +139,48 @@
              complete
              (recur
               (if reverse
-                (rest (seek tx start-path (pathwise/decode last-key)
-                            :limit chunk-size :partial false :no-decode true :reverse reverse))
-                (rest (seek tx (pathwise/decode last-key) end-path
-                            :limit chunk-size :partial partial :no-decode true :reverse reverse)))
+                (rest (seek-chunk tx start last-key chunk-size true))
+                (rest (seek-chunk tx last-key end chunk-size false)))
               complete
               active-key
               active-data
               limit))))))))
 
+(defn- encode-seek-path [path & cs]
+  (apply str (pathwise/partially-encode path) (map char cs)))
+
+(defmacro ^:private assemble-seek [start end]
+  `(seek-path-chunk ~'tx (count ~'path)
+                    (str (codax.pathwise/partially-encode ~start) (char 0x00))
+                    (str (codax.pathwise/partially-encode ~end) (char 0x00) (char 0xff))
+                    ~'limit ~'reverse))
 
 (defn seek-path [tx path limit reverse]
-  (seek-path-chunk tx (count path) path path limit false reverse))
-
-(defn seek-prefix [tx path val-prefix limit reverse]
-  (let [seek-path (conj path val-prefix)]
-    (seek-path-chunk tx (count path) seek-path seek-path limit true reverse)))
-
-(defn seek-prefix-range [tx path start-prefix end-prefix limit reverse]
-  (if (pos? (compare start-prefix end-prefix))
-    []
-    (seek-path-chunk tx (count path) (conj path start-prefix) (conj path end-prefix) limit true reverse)))
+  (assemble-seek path path))
 
 (defn seek-from [tx path start-val limit reverse]
-  (let [start-path (conj path start-val)]
-    (seek-path-chunk tx (count path) start-path path limit false reverse)))
+  (assemble-seek (conj path start-val) path))
 
 (defn seek-to [tx path end-val limit reverse]
-  (let [end-path (conj path end-val)]
-    (seek-path-chunk tx (count path) path end-path limit false reverse)))
+  (assemble-seek path (conj path end-val)))
 
 (defn seek-range [tx path start-val end-val limit reverse]
   (if (pos? (compare start-val end-val))
     []
-    (let [start-path (conj path start-val)
-          end-path (conj path end-val)]
-      (seek-path-chunk tx (count path) start-path end-path limit false reverse))))
+    (assemble-seek (conj path start-val) (conj path end-val))))
+
+(defn seek-prefix [tx path val-prefix limit reverse]
+  (let [seek-path (conj path val-prefix)
+        start (encode-seek-path seek-path)
+        end (encode-seek-path seek-path 0xff)]
+    (seek-path-chunk tx (count path) start end limit reverse)))
+
+(defn seek-prefix-range [tx path start-prefix end-prefix limit reverse]
+  (if (pos? (compare start-prefix end-prefix))
+    []
+    (let [start (encode-seek-path (conj path start-prefix))
+          end (encode-seek-path (conj path end-prefix) 0xff)]
+      (seek-path-chunk tx (count path) start end limit reverse))))
 
 ;;;;;
 
