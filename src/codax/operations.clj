@@ -21,22 +21,18 @@
 (defn seek
   ([tx] (seek tx nil nil))
   ([tx path] (seek tx path path))
-  ([tx start-path end-path & {:keys [limit no-decode only-keys only-vals partial reverse]}]
-   (let [order-char (if partial nil (char 0x00))
-         start (if (empty? start-path)
+  ([tx start-path end-path & {:keys [no-decode only-keys]}]
+   (let [start (if (empty? start-path)
                  (str (char 0x00))
-                 (str (pathwise/partially-encode start-path) order-char))
+                 (str (pathwise/partially-encode start-path) (char 0x00)))
          end (if (empty? end-path)
                (str (char 0xff))
-               (str (pathwise/partially-encode end-path) order-char (char 0xff)))
-         results (if reverse
-                   (store/b+seek-reverse tx start end :limit limit)
-                   (store/b+seek tx start end :limit limit))]
+               (str (pathwise/partially-encode end-path) (char 0x00) (char 0xff)))
+         results (store/b+seek tx start end)]
      (cond
        (and no-decode only-keys) (map first results)
        no-decode results
        only-keys (map #(pathwise/decode (first %)) results)
-       only-vals (map second results)
        :else (map #(update % 0 pathwise/decode) results)))))
 
 
