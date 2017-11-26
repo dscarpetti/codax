@@ -291,7 +291,7 @@
 
 ;;;; Main
 
-(defn -main []
+(defn- -main []
   (clojure.main/repl
    :init (fn []
            (in-ns 'codax.core)
