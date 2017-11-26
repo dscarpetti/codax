@@ -518,8 +518,7 @@ The following figures are for a database populated with 16,000,000 (map-leaf) va
   - ~1640 read-transactions/second
   - ~2700ms per compaction (compaction happens automatically every 10,000 writes)
 
-These values come from running the `codax.bench.performace/run-benchmark` benchmarking function without arguments 3 times consecutively.
-
+These values come from running the `codax.bench.performance/run-benchmark` benchmarking function without arguments 3 times consecutively.
 
 ### Bugs
 
