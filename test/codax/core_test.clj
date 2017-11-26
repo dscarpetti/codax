@@ -365,6 +365,136 @@
     (is (not (is-open? "test-databases/coreA")))
     (is (not (is-open? "test-databases/coreB")))
     (is (not (is-open? "test-databases/coreC")))))
+
+;; -- consistency validation --
+
+(deftest extend-nil-path-with-val
+  (is (=
+       (assoc-at! *testing-database* [:a] nil)
+       nil))
+  (is (=
+       (assoc-at! *testing-database* [:a :b] "val")
+       "val"))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "val"}})))
+
+(deftest extend-nil-path-with-map
+  (is (=
+       (assoc-at! *testing-database* [:a] nil)
+       nil))
+  (is (=
+       (assoc-at! *testing-database* [:a] {:b "val"})
+       {:b "val"}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "val"}})))
+
+(deftest extend-val-path-with-val
+  (is (=
+       (assoc-at! *testing-database* [:a] "anything")
+       "anything"))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Occupied Path"
+                        (assoc-at! *testing-database* [:a :b] "val")))
+  (is (=
+       (get-at! *testing-database*)
+       {:a "anything"})))
+
+(deftest extend-val-path-with-map
+  (is (=
+       (assoc-at! *testing-database* [:a] "anything")
+       "anything"))
+  (is (=
+       (assoc-at! *testing-database* [:a] {:b "val"})
+       {:b "val"}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "val"}})))
+
+(deftest extend-val-path-with-val-long
+  (is (=
+       (assoc-at! *testing-database* [:a :b] "anything")
+       "anything"))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Occupied Path"
+                        (assoc-at! *testing-database* [:a :b :c] "val")))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "anything"}})))
+
+(deftest extend-val-path-with-partial-val-long
+  (is (=
+       (assoc-at! *testing-database* [:a] "anything")
+       "anything"))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Occupied Path"
+                        (assoc-at! *testing-database* [:a :b :c] "val")))
+  (is (=
+       (get-at! *testing-database*)
+       {:a "anything"})))
+
+(deftest extend-val-path-with-partial-map-long
+  (is (=
+       (assoc-at! *testing-database* [:a :b] "anything")
+       "anything"))
+  (is (=
+       (assoc-at! *testing-database* [:a] {:b {:c "val"}})
+       {:b {:c "val"}}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b {:c "val"}}})))
+
+(deftest extend-val-path-with-map-long
+  (is (=
+       (assoc-at! *testing-database* [:a :b] "anything")
+       "anything"))
+  (is (=
+       (assoc-at! *testing-database* [:a :b] {:c "val"})
+       {:c "val"}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b {:c "val"}}})))
+
+(deftest extend-false-path-with-val
+  (is (=
+       (assoc-at! *testing-database* [:a] false)
+       false))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Occupied Path"
+                        (assoc-at! *testing-database* [:a :b] "val")))
+  (is (=
+       (get-at! *testing-database*)
+       {:a false})))
+
+(deftest extend-false-path-with-map
+  (is (=
+       (assoc-at! *testing-database* [:a] false)
+       false))
+  (is (=
+       (assoc-at! *testing-database* [:a] {:b "val"})
+       {:b "val"}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "val"}})))
+
+(deftest extend-vec-path-with-val
+  (is (=
+       (assoc-at! *testing-database* [:a] [])
+       []))
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Occupied Path"
+                        (assoc-at! *testing-database* [:a :b] "val")))
+  (is (=
+       (get-at! *testing-database*)
+       {:a []})))
+
+(deftest extend-vec-path-with-map
+  (is (=
+       (assoc-at! *testing-database* [:a] [])
+       []))
+  (is (=
+       (assoc-at! *testing-database* [:a] {:b "val"})
+       {:b "val"}))
+  (is (=
+       (get-at! *testing-database*)
+       {:a {:b "val"}})))
+
 ;; --- path conversions ---
 
 (deftest path-conversion-from-val

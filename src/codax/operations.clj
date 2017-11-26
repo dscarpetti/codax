@@ -188,13 +188,14 @@
     (if (or (zero? (count remaining-path))
             (contains? validated-paths remaining-path))
       (assoc tx :validated-paths validated-paths)
-      (if-let [val (get-val tx remaining-path)]
-        (throw (ex-info "Occupied Path" {:cause :non-map-element
-                                         :message "Could not extend the path because a non-map element was encountered."
-                                         :attempted-path path
-                                         :element-at remaining-path
-                                         :element-value val}))
-        (recur (pop remaining-path) (conj validated-paths remaining-path))))))
+      (let [val (get-val tx remaining-path)]
+        (if (not (nil? val))
+          (throw (ex-info "Occupied Path" {:cause :non-map-element
+                                           :message "Could not extend the path because a non-map element was encountered."
+                                           :attempted-path path
+                                           :element-at remaining-path
+                                           :element-value val}))
+          (recur (pop remaining-path) (conj validated-paths remaining-path)))))))
 
 (defn- clear-path [tx path]
   (reduce (fn [tx raw-key] (store/b+remove tx raw-key))
