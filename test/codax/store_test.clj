@@ -225,8 +225,8 @@
 (deftest stress-small
   (stress-database *testing-database* 1000))
 
-(deftest stress-large
-  (stress-database *testing-database* 10000))
+;;(deftest stress-large
+;;  (stress-database *testing-database* 10000))
 
 (defn compaction-test [db]
   (let [path (:path db)
