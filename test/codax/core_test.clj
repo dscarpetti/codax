@@ -365,3 +365,28 @@
     (is (not (is-open? "test-databases/coreA")))
     (is (not (is-open? "test-databases/coreB")))
     (is (not (is-open? "test-databases/coreC")))))
+;; --- path conversions ---
+
+(deftest path-conversion-from-val
+  (is (=
+       (assoc-at! *testing-database* :foo "bar")
+       "bar"))
+  (is (=
+       (get-at! *testing-database*))
+      {:foo "bar"}))
+
+(deftest path-conversion-from-list
+  (is (=
+       (assoc-at! *testing-database* (list :foo :bar) "baz")
+       "baz"))
+  (is (=
+       (get-at! *testing-database*))
+      {:foo {:bar "baz"}}))
+
+(deftest path-conversion-from-seq
+  (is (=
+       (assoc-at! *testing-database* (map identity [:foo :bar]) "baz")
+       "baz"))
+  (is (=
+       (get-at! *testing-database*))
+      {:foo {:bar "baz"}}))
