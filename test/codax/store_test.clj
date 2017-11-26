@@ -1,5 +1,6 @@
 (ns codax.store-test
   (:require
+   [codax.test-logging :refer [logln]]
    [codax.store :refer :all]
    [clojure.java.io :as io]
    [clojure.pprint :refer [pprint]]
@@ -32,7 +33,7 @@
     (open-database "test-databases/non-folder")
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= cause :not-a-directory))
         (is (= (.getMessage e) "Invalid Database"))))
     (finally (io/delete-file "test-databases/non-folder"))))
@@ -61,7 +62,7 @@
       (open-database "test-databases/bad-type-flag")
       (catch clojure.lang.ExceptionInfo e
         (let [{:keys [cause] :as data} (ex-data e)]
-          (println data)
+          (logln data)
           (is (= cause :file-type-mismatch))
           (is (= (.getMessage e) "Invalid Database")))))))
 
@@ -74,7 +75,7 @@
       (open-database "test-databases/bad-version-flag")
       (catch clojure.lang.ExceptionInfo e
         (let [{:keys [cause] :as data} (ex-data e)]
-          (println data)
+          (logln data)
           (is (= cause :version-mismatch))
           (is (= (.getMessage e) "Incompatible Database")))))))
 
@@ -87,7 +88,7 @@
       (open-database "test-databases/bad-order-param")
       (catch clojure.lang.ExceptionInfo e
         (let [{:keys [cause] :as data} (ex-data e)]
-          (println data)
+          (logln data)
           (is (= cause :order-mismatch))
           (is (= (.getMessage e) "Incompatible Database")))))))
 
@@ -100,7 +101,7 @@
 
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= cause :attempted-transaction))
         (is (= (.getMessage e) "Database Closed"))))))
 
@@ -112,7 +113,7 @@
 
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= cause :attempted-transaction))
         (is (= (.getMessage e) "Database Closed"))))))
 
@@ -124,7 +125,7 @@
       (compact-database *testing-database*))
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= cause :attempted-compaction))
         (is (= (.getMessage e) "Database Closed"))))))
 
@@ -204,7 +205,7 @@
         start-time (System/currentTimeMillis)]
     (dorun (pmap #(%) ops))
     (let [seconds (/ (- (System/currentTimeMillis) start-time) 1000)]
-      (println "Took ~"
+      (logln "Took ~"
                (int seconds)
                "seconds to interleave "
                (* op-count 2)

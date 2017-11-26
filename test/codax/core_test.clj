@@ -1,5 +1,6 @@
 (ns codax.core-test
   (:require [clojure.test :refer :all]
+            [codax.test-logging :refer [logln]]
             [codax.core :refer :all]
             [codax.store :refer [destroy-database]]
             [codax.swaps :refer :all]))
@@ -8,7 +9,7 @@
 
 (defn store-setup-and-teardown [f]
   (binding [*testing-database* (open-database! "test-databases/core")]
-                                        ;(println "SETUP")
+                                        ;(logln "SETUP")
     (f))
   (destroy-database "test-databases/core"))
 
@@ -23,7 +24,7 @@
        (let [x#
              (with-read-transaction [~'*testing-database* ~'tx]
                ~read-tx)]
-         ;;(println x#)
+         ;;(logln x#)
          x#))
      ~final-value)))
 
@@ -33,7 +34,7 @@
      (let [x#
            (with-read-transaction [~'*testing-database* ~'tx]
              ~read-tx)]
-       ;;(println x#)
+       ;;(logln x#)
        x#)
      ~final-value)))
 
@@ -239,7 +240,7 @@
       (assoc-at tx [] "failure"))
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= (.getMessage e) "Invalid Path"))
         (is (= cause :empty-path))))))
 
@@ -251,7 +252,7 @@
           (assoc-at [:hello :world] "failure")))
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= (.getMessage e) "Occupied Path"))
         (is (= cause :non-map-element))))))
 
@@ -265,7 +266,7 @@
         (assoc-at tx [:hello :world] "failure")))
     (catch clojure.lang.ExceptionInfo e
       (let [{:keys [cause] :as data} (ex-data e)]
-        (println data)
+        (logln data)
         (is (= (.getMessage e) "Occupied Path"))
         (is (= cause :non-map-element))))))
 
