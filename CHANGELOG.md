@@ -1,6 +1,23 @@
 # Change Log
 
-## 1.1.0
+## 1.2.0
+
+* seek-support - exposed seeking for records (forward and reverse) with documentation and examples
+  * `seek-at` & `seek-at!`
+  * `seek-from` & `seek-from!`
+  * `seek-to` & `seek-to!`
+  * `seek-range` & `seek-range!`
+  * `seek-prefix` & `seek-prefix!`
+  * `seek-prefix-range` & `seek-prefix-range!`
+* better exceptions for common errors
+  * clojure.lang.ExceptionInfo: Invalid Database
+  * clojure.lang.ExceptionInfo: Invalid Transaction
+* dropped `^:skip-aot` directive
+* codax.core/-main is now private
+* tests no longer log any output by default
+* moved dev deps and utils to :dev profile
+
+## 1.1.0 (2017-11-8)
 
 * thread-safe opening/closing/destroying databases
 * add `destroy-database!` to core namespace
