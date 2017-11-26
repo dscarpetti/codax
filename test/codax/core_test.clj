@@ -205,10 +205,33 @@
 
 (deftest write-transaction-without-final-tx
   (is
-   (thrown?
-    java.lang.NullPointerException
+   (thrown-with-msg?
+    clojure.lang.ExceptionInfo #"Invalid Transaction"
     (with-write-transaction [*testing-database* tx]))))
 
+(deftest write-transaction-with-invalid-database-nil
+  (is
+   (thrown-with-msg?
+    clojure.lang.ExceptionInfo #"Invalid Database"
+    (with-write-transaction [nil tx]))))
+
+(deftest write-transaction-with-invalid-database-2
+  (is
+   (thrown-with-msg?
+    clojure.lang.ExceptionInfo #"Invalid Database"
+    (with-write-transaction [2 tx]))))
+
+(deftest write-transaction-with-invalid-database-map
+  (is
+   (thrown-with-msg?
+    clojure.lang.ExceptionInfo #"Invalid Database"
+    (with-write-transaction [{} tx]))))
+
+(deftest assoc-at-without-txn
+  (is
+   (thrown-with-msg?
+    clojure.lang.ExceptionInfo #"Invalid Transaction"
+    (assoc-at "no-tx" [:a] "something"))))
 
 (deftest failed-assoc-empty-path
   (try
