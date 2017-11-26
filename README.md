@@ -4,6 +4,8 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
+`[codax "1.1.0"]` - latest stable
+
 ### The Why
 
 Even simple programs frequently benefit from saving data to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
@@ -69,7 +71,7 @@ These are the same as the transactional-functions except that their first argume
   - `merge-at!`
   - `dissoc-at!`
 
-**Seek Functions**
+**Seek Functions** _added in 1.2.0_
 
 These allow you to get ordered subsets of data from the database "map" in the form of ordered key-value pairs. Each accepts optional `:limit` and `:reverse` keyword parameters. They follow the same naming conventions of the other functions (plain variants expect a `tx` argument and `!` variants expect a `db` argument).
 
