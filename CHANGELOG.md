@@ -1,6 +1,6 @@
 # Change Log
 
-## 1.2.0
+## 1.2.0 (2018-01-22)
 
 * seek-support - exposed seeking for records (forward and reverse) with documentation and examples
   * `seek-at` & `seek-at!`
