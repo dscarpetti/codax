@@ -155,7 +155,7 @@ Write transactions block other write transactions (though they do not block read
 ## Examples
 
 ``` clojure
-(require [codax.core :as c])
+(require '[codax.core :as c])
 ```
 
 ### Simple Use
