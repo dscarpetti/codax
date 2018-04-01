@@ -4,6 +4,8 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
+Version 1.2.0 adds seeking features. See [CHANGELOG](https://github.com/dscarpetti/codax/blob/master/CHANGELOG.md) for more details.
+
 ### The Why
 
 Even simple programs frequently benefit from saving data to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
@@ -30,8 +32,11 @@ I have successfully used this library in production environments. That said, the
 
 **Database Functions**
 
-  - `open-database` - Opens or creates a database
-  - `close-database` - Closes an open database
+  - `open-database!` - Opens or creates a database, or returns an existing database connection if it's already open
+  - `close-database!` - Safely closes an open database
+  - `close-all-databases!` - Safely closes all open databases
+  - `is-open?` - Checks if a database is open
+  - `destroy-database!` - Deletes a database and all its data _irretrievably_ (intended for use in tests).
 
 **Transaction Macros**
 
@@ -66,6 +71,19 @@ These are the same as the transactional-functions except that their first argume
   - `merge-at!`
   - `dissoc-at!`
 
+**Seek Functions** _added in 1.2.0_
+
+These allow you to get ordered subsets of data from the database "map" in the form of ordered key-value pairs. Each accepts optional `:limit` and `:reverse` keyword parameters. They follow the same naming conventions of the other functions (plain variants expect a `tx` argument and `!` variants expect a `db` argument).
+
+  - `seek-at` & `seek-at!` - get ordered key-value pairs from the map at the provided `path`
+  - `seek-from` & `seek-from!` - get ordered key-value pairs from the map at the provided path for keys >= `start-val`
+  - `seek-to` & `seek-to!` - get ordered key-value pairs from the map at the provided path for keys <= `end-val`
+  - `seek-range` & `seek-range!` - get ordered key-value pairs from the map at the provided path for keys >= `start-val` and <= `end-val`
+  - `seek-prefix` & `seek-prefix!` - get ordered key-value pairs from the map at the provided path for **string or keyword** keys which begin with `val-prefix`
+  - `seek-prefix-range` & `seek-prefix-range!` - get ordered key-value pairs from the map at the provided path for **string or keyword** keys which begin with a value between (inclusive) `start-prefix` & `end-prefix`
+
+See [Seek Examples](#seek-examples)
+
 ### Paths
 A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions:
 
@@ -88,7 +106,51 @@ If you are interested in contributing support for additional types, please revie
 ### Conformant Values
 
   - non-map values of any type serializable by [nippy](https://github.com/ptaoussanis/nippy)
+    - _this will only be relevant to you if you are storing custom records or exotic datatypes. Out of the box, virtually all standard clojure datatypes are supported (i.e. you don't need to do anything special to store lists/vectors/sets/etc.)_
+    - _the serialization is performed automatically, you **do not** need to serialize values manually_
   - maps and nested maps whose **keys conform to the valid path types** listed above
+
+### Transactions
+
+**Immutability**
+
+Transactions are immutable. Each transformation (e.g. `assoc-at`, `update-at`) returns a new transaction, it _does not modify_ the transaction. Essentially you should treat them as you would a standard clojure map, one that you interact with using the `*-at` functions.
+
+_Example:_
+```clojure
+(c/with-write-transaction [db tx-original]
+  (let [tx-a (c/assoc-at tx-original [:letter] "a")
+        tx-b (c/assoc-at tx-original [:letter] "b")]
+    tx-a))
+
+(c/get-at! db [:letter]) ; "a"
+```
+
+See the [FAQ](#frequently-asked-questions) for examples of potential pitfalls.
+
+**Visibility**
+
+Changes in a transaction are only visible to subsequent transformations on that transaction. They are not visible anywhere else until committed (by being the final result in the body of a `with-write-transaction` expression). The changes are also not visible in any read transaction opened before the write transaction is committed.
+
+_Example:_
+```clojure
+(c/with-write-transaction [db tx]
+  (-> tx
+      (c/assoc-at [:number] 1000)
+      (c/update-at [:number] inc)))
+
+(c/get-at! db [:number]) ; 1001
+
+```
+
+**Exceptions**
+
+If an Exception is thrown within a `with-write-transaction` expression, the transaction is aborted and no changes are persisted.
+
+**Locking**
+
+Write transactions block other write transactions (though they do not block read transactions). It is best to avoid doing any computationally complex or IO heavy tasks (such as fetching remote data) inside a `with-write-transaction` block. See [Performance](#performance) for more details.
+
 
 ## Examples
 
@@ -99,7 +161,7 @@ If you are interested in contributing support for additional types, please revie
 ### Simple Use
 ``` clojure
 
-(def db (c/open-database "data/demo-database")) ;
+(def db (c/open-database! "data/demo-database")) ;
 
 (c/assoc-at! db [:assets :people] {0 {:name "Alice"
                                       :occupation "Programmer"
@@ -125,13 +187,13 @@ If you are interested in contributing support for additional types, please revie
 ;;   :tools {"hammer" true
 ;;           "keyboard" true}}
 
-(c/close-database db)
+(c/close-database! db)
 ```
 
 ### Transaction Example
 
 ``` clojure
-(def db (c/open-database "data/demo-database"))
+(def db (c/open-database! "data/demo-database"))
 
 ;;;; init
 (c/with-write-transaction [db tx]
@@ -174,7 +236,7 @@ If you are interested in contributing support for additional types, please revie
 		  (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
-  "remove a uset"
+  "remove a user"
   [username]
   (c/with-write-transaction [db tx]
 	(when-let [user-id (c/get-at tx [:usernames username])]
@@ -201,7 +263,7 @@ If you are interested in contributing support for additional types, please revie
 ;;  {:counters {:id 2, :users 2},
 ;;   :usernames {"charlie" 0, "diane" 1},
 ;;   :users
-;;   {0 {:id 0, :timestamp 1484529603440, :username "charlie"},
+;;   {0 {:id 0, :timestamp 1484529469567, :username "charlie"},
 ;;    1 {:id 1, :timestamp 1484529603444, :username "diane"}}}
 
 
@@ -210,19 +272,177 @@ If you are interested in contributing support for additional types, please revie
 ;;  {:counters {:id 2, :users 2},
 ;;   :usernames {"chuck" 0, "diane" 1},
 ;;   :users
-;;   {0 {:id 0, :timestamp 1484529702868, :username "chuck"},
-;;    1 {:id 1, :timestamp 1484529702872, :username "diane"}}}
+;;   {0 {:id 0, :timestamp 1484529469567, :username "chuck"},
+;;    1 {:id 1, :timestamp 1484529603444, :username "diane"}}}
 
 
 (remove-user "diane") ; nil
 (c/get-at! db)
 ;;  {:counters {:id 2, :users 1},
 ;;   :usernames {"chuck" 0, "diane" 1},
-;;   :users {0 {:id 0, :timestamp 1484529782527, :username "chuck"}}}
+;;   :users {0 {:id 0, :timestamp 1484529469567, :username "chuck"}}}
 
 
 
-(c/close-database db)
+(c/close-database! db)
+
+```
+
+### Seek Examples
+
+**Directory Example**
+
+``` clojure
+(def db (c/open-database! "data/example-database"))
+
+(c/assoc-at! db [:directory]
+             {"Alice" {:ext 247, :dept "qa"}
+              "Barbara" {:ext 228, :dept "qa"}
+              "Damian" {:ext 476, :dept "hr"}
+              "Adam" {:ext 357, :dept "hr"}
+              "Frank" {:ext 113, :dept "hr"}
+              "Bill" {:ext 234, :dept "sales"}
+              "Evelyn" {:ext 337, :dept "dev"}
+              "Chuck" {:ext 482, :dept "sales"}
+              "Emily" {:ext 435, :dept "dev"}
+              "Diane" {:ext 245, :dept "dev"}
+              "Chelsea" {:ext 345, :dept "qa"}
+              "Bob" {:ext 326, :dept "sales"}})
+
+;; - seek-at -
+
+(c/seek-at! db [:directory])
+;;[["Adam" {:dept "hr", :ext 357}]
+;; ["Alice" {:dept "qa", :ext 247}]
+;; ["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]
+;; ["Chelsea" {:dept "qa", :ext 345}]
+;; ["Chuck" {:dept "sales", :ext 482}]
+;; ["Damian" {:dept "hr", :ext 476}]
+;; ["Diane" {:dept "dev", :ext 245}]
+;; ["Emily" {:dept "dev", :ext 435}]
+;; ["Evelyn" {:dept "dev", :ext 337}]
+;; ["Frank" {:dept "hr", :ext 113}]]
+
+(c/seek-at! db [:directory] :limit 3)
+;;[["Adam" {:dept "hr", :ext 357}]
+;; ["Alice" {:dept "qa", :ext 247}]
+;; ["Barbara" {:dept "qa", :ext 228}]]
+
+(c/seek-at! db [:directory] :limit 3 :reverse true)
+;;[["Frank" {:ext 113, :dept "hr"}]
+;; ["Evelyn" {:ext 337, :dept "dev"}]
+;; ["Emily" {:ext 435, :dept "dev"}]]
+
+
+;; - seek-prefix -
+
+(c/seek-prefix! db [:directory] "B")
+;;[["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]]
+
+
+;; - seek-prefix-range -
+
+(c/seek-prefix-range! db [:directory] "B" "D")
+;;[["Barbara" {:dept "qa", :ext 228}]
+;; ["Bill" {:dept "sales", :ext 234}]
+;; ["Bob" {:dept "sales", :ext 326}]
+;; ["Chelsea" {:dept "qa", :ext 345}]
+;; ["Chuck" {:dept "sales", :ext 482}]
+;; ["Damian" {:dept "hr", :ext 476}]
+;; ["Diane" {:dept "dev", :ext 245}]]
+
+
+(c/close-database! db)
+
+```
+
+**Messaging Example**
+
+```clojure
+(def db (c/open-database! "data/example-database")) ;
+
+(defn to-instant [s]
+  (java.time.Instant/ofEpochMilli (java.util.Date/parse s)))
+
+(defn post-message!
+  ([user body]
+   (post-message! (java.time.Instant/now) user body))
+  ([inst user body]
+   (c/assoc-at! db [:messages inst] {:user user
+                                     :body body})))
+
+(defn process-messages
+  [messages]
+  (map (fn [[inst m]] (assoc m :time (str inst))) messages))
+
+
+(defn get-messages-before [ts]
+  (process-messages
+   (c/seek-to! db [:messages] ts)))
+
+(defn get-messages-after [ts]
+  (process-messages
+   (c/seek-from! db [:messages] ts)))
+
+(defn get-messages-between [start-ts end-ts]
+  (process-messages
+   (c/seek-range! db [:messages] start-ts end-ts)))
+
+(defn get-recent-messages [n]
+  (-> (c/seek-at! db [:messages] :limit n :reverse true)
+      process-messages ;;
+      reverse)); we reverse the result because we want the messages to be in chronological order
+               ; but we needed to use the :reverse seek parameter to prevent collecting all
+               ; of the messages from the beginning of time (there could be many thousands!)
+
+
+
+(defn simulate-message! [date-time-string user body]
+  (post-message! (to-instant date-time-string) user body))
+
+(simulate-message! "June 6, 2020 11:01" "Bobby" "Hello")
+(simulate-message! "June 6, 2020 11:02" "Alice" "Welcome, Bobby")
+(simulate-message! "June 6, 2020 11:03" "Bobby" "I was wondering how codax seeking works?")
+(simulate-message! "June 6, 2020 11:07" "Alice" "Please be more specific, have you read the docs/examples?")
+(simulate-message! "June 6, 2020 11:08" "Bobby" "Oh, I guess I should do that.")
+
+(simulate-message! "June 7, 2020 14:30" "Chuck" "Anybody here?")
+(simulate-message! "June 7, 2020 14:35" "Chuck" "Guess not...")
+
+(simulate-message! "June 8, 2020 16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
+(simulate-message! "June 8, 2020 16:55" "Alice" "Basically, it seeks from the end and works backwards")
+(simulate-message! "June 8, 2020 16:56" "Bobby" "Why would I do that?")
+(simulate-message! "June 8, 2020 16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
+
+
+(get-recent-messages 3)
+;;({:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+
+(get-messages-after (to-instant "June 7, 2020 14:32"))
+;;({:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."}
+;; {:user "Bobby" :time "2020-06-08T22:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
+;; {:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+
+(get-messages-before (to-instant "June 6, 2020 11:05"))
+;;({:user "Bobby" :time "2020-06-06T17:01:00Z" :body "Hello"}
+;; {:user "Alice" :time "2020-06-06T17:02:00Z" :body "Welcome, Bobby"}
+;; {:user "Bobby" :time "2020-06-06T17:03:00Z" :body "I was wondering how codax seeking works?"})
+
+
+(get-messages-between (to-instant "June 7, 2020")
+                      (to-instant "June 7, 2020 23:59"))
+;;({:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
+;; {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})
+
+(c/close-database! db)
 
 ```
 
@@ -300,18 +520,7 @@ The following figures are for a database populated with 16,000,000 (map-leaf) va
   - ~1640 read-transactions/second
   - ~2700ms per compaction (compaction happens automatically every 10,000 writes)
 
-These values come from running the `codax.bench.performace/run-benchmark` benchmarking function without arguments 3 times consecutively.
-
-## Testing
-
-You can run the tests from the command line with `lein test`.
-
-A few notes:
-
-* Tests that are expected to throw errors will print those errors to the console, that does not indicate that the test has failed.
-* The store-test may lag for a minute or two as it runs a test interleaving 20,000 writes with 100,000 reads.
-* Any help expanding and normalizing the testing would be greatly appreciated.
-
+These values come from running the `codax.bench.performance/run-benchmark` benchmarking function without arguments 3 times consecutively.
 
 ### Bugs
 

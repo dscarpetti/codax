@@ -21,20 +21,18 @@
 (defn seek
   ([tx] (seek tx nil nil))
   ([tx path] (seek tx path path))
-  ([tx start-path end-path & {:keys [limit no-decode only-keys only-vals partial]}]
-   (let [order-char (if partial nil (char 0x00))
-         start (if (empty? start-path)
+  ([tx start-path end-path & {:keys [no-decode only-keys]}]
+   (let [start (if (empty? start-path)
                  (str (char 0x00))
-                 (str (pathwise/partially-encode start-path) order-char))
+                 (str (pathwise/partially-encode start-path) (char 0x00)))
          end (if (empty? end-path)
                (str (char 0xff))
-               (str (pathwise/partially-encode end-path) order-char (char 0xff)))
-         results (store/b+seek tx start end :limit limit)]
+               (str (pathwise/partially-encode end-path) (char 0x00) (char 0xff)))
+         results (store/b+seek tx start end)]
      (cond
        (and no-decode only-keys) (map first results)
        no-decode results
        only-keys (map #(pathwise/decode (first %)) results)
-       only-vals (map second results)
        :else (map #(update % 0 pathwise/decode) results)))))
 
 
@@ -82,6 +80,106 @@
   [tx path]
   (get-in (reduce reduce-assoc {} (seek tx path)) path))
 
+
+
+;;;;;;;;;;;;
+
+
+(defn- seek-chunk [tx start end chunk-size reverse]
+  (if reverse
+    (store/b+seek-reverse tx start end :limit chunk-size)
+    (store/b+seek tx start end :limit chunk-size)))
+
+
+(defn- assemble-chunk [lead-trim data complete active-key active-data limit last-key]
+  (if (or (= limit 0) (empty? data))
+    [complete active-key active-data limit last-key]
+    (let [[raw-k v] (first data)
+          [k & ks] (drop lead-trim (pathwise/decode raw-k))]
+      (if (or (= active-key k) (= active-key ::none))
+        (recur lead-trim
+               (rest data)
+               complete
+               k
+               (if (empty? ks) v (assoc-in active-data ks v))
+               limit
+               raw-k)
+        (recur lead-trim
+               (rest data)
+               (conj! complete [active-key active-data])
+               k
+               (if (empty? ks) v (assoc-in {} ks v))
+               (dec limit)
+               raw-k)))))
+
+(defn- seek-path-chunk
+  [tx lead-trim start end limit reverse]
+  (let [chunk-size (if (and (number? limit) (pos? limit))
+                     (max (int limit) 10)
+                     nil)
+        limit (if (and (number? limit)) limit -1)]
+    (persistent!
+     (loop [chunk (seek-chunk tx start end chunk-size reverse)
+            results (transient [])
+            active-key ::none
+            active-data nil
+            limit limit]
+       (if (or (= limit 0) (empty? chunk))
+         (if (= active-key ::none)
+           results
+           (conj! results [active-key active-data]))
+         (let [prev-limit limit
+               [complete active-key active-data limit last-key]
+               (assemble-chunk lead-trim chunk results active-key active-data limit nil)]
+           (if (= limit 0)
+             complete
+             (recur
+              (if reverse
+                (rest (seek-chunk tx start last-key chunk-size true))
+                (rest (seek-chunk tx last-key end chunk-size false)))
+              complete
+              active-key
+              active-data
+              limit))))))))
+
+(defn- encode-seek-path [path & cs]
+  (apply str (pathwise/partially-encode path) (map char cs)))
+
+(defmacro ^:private assemble-seek [start end]
+  `(seek-path-chunk ~'tx (count ~'path)
+                    (str (codax.pathwise/partially-encode ~start) (char 0x00))
+                    (str (codax.pathwise/partially-encode ~end) (char 0x00) (char 0xff))
+                    ~'limit ~'reverse))
+
+(defn seek-path [tx path limit reverse]
+  (assemble-seek path path))
+
+(defn seek-from [tx path start-val limit reverse]
+  (assemble-seek (conj path start-val) path))
+
+(defn seek-to [tx path end-val limit reverse]
+  (assemble-seek path (conj path end-val)))
+
+(defn seek-range [tx path start-val end-val limit reverse]
+  (if (pos? (compare start-val end-val))
+    []
+    (assemble-seek (conj path start-val) (conj path end-val))))
+
+(defn seek-prefix [tx path val-prefix limit reverse]
+  (let [seek-path (conj path val-prefix)
+        start (encode-seek-path seek-path)
+        end (encode-seek-path seek-path 0xff)]
+    (seek-path-chunk tx (count path) start end limit reverse)))
+
+(defn seek-prefix-range [tx path start-prefix end-prefix limit reverse]
+  (if (pos? (compare start-prefix end-prefix))
+    []
+    (let [start (encode-seek-path (conj path start-prefix))
+          end (encode-seek-path (conj path end-prefix) 0xff)]
+      (seek-path-chunk tx (count path) start end limit reverse))))
+
+;;;;;
+
 (defn- validate-path [tx path]
   (when (empty? path) (throw (ex-info "Invalid Path" {:cause :empty-path
                                                       :message "You cannot modify the empty (root) path."})))
@@ -90,13 +188,14 @@
     (if (or (zero? (count remaining-path))
             (contains? validated-paths remaining-path))
       (assoc tx :validated-paths validated-paths)
-      (if-let [val (get-val tx remaining-path)]
-        (throw (ex-info "Occupied Path" {:cause :non-map-element
-                                         :message "Could not extend the path because a non-map element was encountered."
-                                         :attempted-path path
-                                         :element-at remaining-path
-                                         :element-value val}))
-        (recur (pop remaining-path) (conj validated-paths remaining-path))))))
+      (let [val (get-val tx remaining-path)]
+        (if (not (nil? val))
+          (throw (ex-info "Occupied Path" {:cause :non-map-element
+                                           :message "Could not extend the path because a non-map element was encountered."
+                                           :attempted-path path
+                                           :element-at remaining-path
+                                           :element-value val}))
+          (recur (pop remaining-path) (conj validated-paths remaining-path)))))))
 
 (defn- clear-path [tx path]
   (reduce (fn [tx raw-key] (store/b+remove tx raw-key))

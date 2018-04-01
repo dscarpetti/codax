@@ -6,9 +6,15 @@
    [codax.store :as store])
   (:gen-class))
 
-(defn open-database
+(defn is-open?
+  "Takes a database or a path and returns true if the database is open.
+  If the database is closed (or does not exist) false is returned."
+  [filepath-or-db]
+  (store/is-open? filepath-or-db))
+
+(defn open-database!
   "Opens a database at the given filepath. If a database is already open at the given path
-  an Exception is thrown.
+  the existing database connection is returned.
 
   By default a set of files in the database directory with the suffix ARCHIVE are created or
   overwritten on each compaction and represent the most recent pre-compaction state.
@@ -26,21 +32,51 @@
   [filepath & {:keys [backup-fn]}]
   (store/open-database filepath backup-fn))
 
-(defn close-database
-  "Will close the database at the provided filepath (or the filepath of the a database map)
+(defn close-database!
+  "Safely closes the database at the provided filepath (or the filepath of the a database map)
   Attempts to use a closed or invalidated database will throw an Exception."
   [filepath-or-db]
   (store/close-database filepath-or-db))
 
+(defn close-all-databases!
+  "Safely closes all open databases"
+  []
+  (store/close-all-databases))
+
+(defn destroy-database!
+  "Removes database files and generic archive files.
+  If there is nothing else in the database directory, it is also removed.
+  If open, the database will be closed.
+
+  This function is predominantly intended to facilitate testing."
+  [filepath-or-db]
+  (store/destroy-database filepath-or-db))
+
+(defn open-database
+  "DEPRECATED - use `open-database!` instead"
+  {:deprecated "1.1.0"}
+  [filepath & {:keys [backup-fn]}]
+  (println "WARNING: codax.core/open-database is deprecated, use codax.core/open-database! instead")
+  (open-database! filepath :backup-fn backup-fn))
+
+(defn close-database
+  "DEPRECATED - use `close-database!` instead"
+  {:deprecated "1.1.0"}
+  [filepath-or-db]
+  (println "WARNING: codax.core/close-database is deprecated, use codax.core/close-database! instead")
+  (close-database! filepath-or-db))
+
 (defn get-at
-  "Returns the map or othre value at the supplied `path`. If it has been modified within
+  "Returns the map or other value at the supplied `path`. If it has been modified within
   the current transaction, it will evaluate to the modified value
 
   `path` will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   ([tx]
+   (store/assert-txn tx)
    (ops/collect tx []))
   ([tx path]
+   (store/assert-txn tx)
    (ops/collect tx (prefix-path tx path))))
 
 (defn assoc-at
@@ -53,6 +89,7 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path val-or-map]
+  (store/assert-txn tx)
   (ops/assoc-path tx (prefix-path tx path) val-or-map))
 
 (defn update-at
@@ -64,10 +101,12 @@
   All paths will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path f & args]
+  (store/assert-txn tx)
   (apply ops/update-path tx (prefix-path tx path) f args))
 
 (defn merge-at
   [tx path m]
+  (store/assert-txn tx)
   (apply ops/update-path tx (prefix-path tx path) merge m))
 
 
@@ -80,7 +119,75 @@
   The path will be prefixed with the transaction `prefix` (if the transaction has one,
   by default, it does not)."
   [tx path]
+  (store/assert-txn tx)
   (ops/delete-path tx (prefix-path tx path)))
+
+;;;;
+
+(defn seek-at
+  "Provides key-value pairs ordered by key of the map at the provided `path`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-path tx (prefix-path tx path) limit reverse))
+
+(defn seek-prefix
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys beginning with `val-prefix`.
+
+  Note: `val-prefix` should be a string or keyword.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path val-prefix & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
+
+(defn seek-prefix-range
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys beginning with a prefix between `start-prefix` & `end-prefix`
+
+  Note: `start-prefix` & `end-prefix` should be strings or keywords.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-prefix end-prefix & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-prefix-range tx (prefix-path tx path) start-prefix end-prefix limit reverse))
+
+
+(defn seek-from
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys >= `start-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
+
+(defn seek-to
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys <= `end-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path end-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
+
+(defn seek-range
+  "Provides key-value pairs ordered by key of the map at the provided `path`
+  for all keys >= `start-val` and <= `end-val`.
+
+  `path` will be prefixed with the transaction `prefix` (if the transaction has one,
+  by default, it does not)."
+  [tx path start-val end-val & {:keys [limit reverse]}]
+  (store/assert-txn tx)
+  (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
+
 
 ;;;; Transactions
 
@@ -156,9 +263,47 @@
   (with-result-transaction [db tx path]
     (dissoc-at tx path)))
 
+
+(defn seek-at!
+  "Wraps a `seek-at` call in a read transaction for convenience."
+  [db path & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-at tx path :limit limit :reverse reverse)))
+
+(defn seek-prefix!
+  "Wraps a `seek-prefix` call in a read transaction for convenience."
+  [db path val-prefix & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-prefix tx path val-prefix :limit limit :reverse reverse)))
+
+(defn seek-prefix-range!
+  "Wraps a `seek-prefix-range` call in a read transaction for convenience."
+  [db path start-prefix end-prefix & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-prefix-range tx path start-prefix end-prefix :limit limit :reverse reverse)))
+
+(defn seek-from!
+  "Wraps a `seek-from` call in a read transaction for convenience."
+  [db path start-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-from tx path start-val :limit limit :reverse reverse)))
+
+(defn seek-to!
+  "Wraps a `seek-to` call in a read transaction for convenience."
+  [db path end-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-to tx path end-val :limit limit :reverse reverse)))
+
+(defn seek-range!
+  "Wraps a `seek-range` call in a read transaction for convenience."
+  [db path start-val end-val & {:keys [limit reverse]}]
+  (with-read-transaction [db tx]
+    (seek-range tx path start-val end-val :limit limit :reverse reverse)))
+
+
 ;;;; Main
 
-(defn -main []
+(defn- -main []
   (clojure.main/repl
    :init (fn []
            (in-ns 'codax.core)

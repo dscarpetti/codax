@@ -1,7 +1,9 @@
 (ns codax.pathwise-test
-  (:require [codax.pathwise :refer :all]
-            [clojure.test :refer :all]
-            [clojure.pprint :refer [pprint]]))
+  (:require
+   [codax.test-logging :refer [logln]]
+   [codax.pathwise :refer :all]
+   [clojure.test :refer :all]
+   [clojure.pprint :refer [pprint]]))
 
 ;;;; testing
 
@@ -10,13 +12,13 @@
         decoded (decode encoded)]
     (if (= x decoded)
       (do
-        (when (not hide-success) (println "✓ -- " x))
+        (when (not hide-success) (logln "✓ -- " x))
         true)
       (do
         (when (not hide-fail)
-          (println "✗ FAIL")
+          (logln "✗ FAIL")
           (pprint x)
-          (println "NOT EQUAL TO")
+          (logln "NOT EQUAL TO")
           (pprint decoded))
         false))))
 
@@ -65,10 +67,10 @@
            suc 0]
       (if (zero? n)
         (do
-          (println "------------")
+          (logln "------------")
           (if (= suc iterations)
-            (do (println "Pathwise Test Success: " suc "/" iterations) true)
-            (println "Pathwise Test Failed: " suc "/" iterations)))
+            (do (logln "Pathwise Test Success: " suc "/" iterations) true)
+            (logln "Pathwise Test Failed: " suc "/" iterations)))
         (if (test-random :hide-success hide-success)
           (recur (dec n) (inc suc))
           (recur (dec n) suc))))))

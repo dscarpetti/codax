@@ -229,60 +229,96 @@
 
 ;;; Open/Close/Destroy
 
+(defonce connection-lock (Object.))
+
 (defn close-database [path-or-db]
-  (let [path (to-canonical-path-string
-              (if (string? path-or-db)
-                path-or-db
-                (:path path-or-db)))]
-    (when-let [open-db (@open-databases path)]
-      (locking (:write-lock open-db)
-        (with-compaction-lock [open-db]
-          (when (not (:is-closed @(:data open-db)))
-            (close-file-handles open-db)
-            (reset! (:data open-db) {:is-closed true})
-            (swap! open-databases dissoc path open-db))))
-      true)))
+  (locking connection-lock
+    (let [path (to-canonical-path-string
+                (if (string? path-or-db)
+                  path-or-db
+                  (:path path-or-db)))]
+      (when-let [open-db (@open-databases path)]
+        (locking (:write-lock open-db)
+          (with-compaction-lock [open-db]
+            (when (not (:is-closed @(:data open-db)))
+              (close-file-handles open-db)
+              (reset! (:data open-db) {:is-closed true})
+              (swap! open-databases dissoc path open-db))))
+        true))))
+
+(defn close-all-databases []
+  (locking connection-lock
+    (doseq [[path db] @open-databases]
+      (close-database path))))
 
 (defn destroy-database
   "Removes database files and generic archive files.
   If there is nothing else in the database directory, it is also removed."
   [path-or-db]
-  (close-database path-or-db)
-  (let [path (to-canonical-path-string
-              (if (string? path-or-db)
-                path-or-db
-                (:path path-or-db)))
-        directory (io/as-file path)
-        nodes-file (io/as-file (str path "/nodes"))
-        manifest-file (io/as-file (str path "/manifest"))
-        nodes-archive-file (io/as-file (str path "/nodes_ARCHIVE"))
-        manifest-archive-file (io/as-file (str path "/manifest_ARCHIVE"))]
-    (when (.exists nodes-file) (io/delete-file nodes-file))
-    (when (.exists manifest-file) (io/delete-file manifest-file))
-    (when (.exists nodes-archive-file) (io/delete-file nodes-archive-file))
-    (when (.exists manifest-archive-file) (io/delete-file manifest-archive-file))
-    (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
-      (io/delete-file directory))))
+  (locking connection-lock
+    (close-database path-or-db)
+    (let [path (to-canonical-path-string
+                (if (string? path-or-db)
+                  path-or-db
+                  (:path path-or-db)))
+          directory (io/as-file path)
+          nodes-file (io/as-file (str path "/nodes"))
+          manifest-file (io/as-file (str path "/manifest"))
+          nodes-archive-file (io/as-file (str path "/nodes_ARCHIVE"))
+          manifest-archive-file (io/as-file (str path "/manifest_ARCHIVE"))]
+      (when (.exists nodes-file) (io/delete-file nodes-file))
+      (when (.exists manifest-file) (io/delete-file manifest-file))
+      (when (.exists nodes-archive-file) (io/delete-file nodes-archive-file))
+      (when (.exists manifest-archive-file) (io/delete-file manifest-archive-file))
+      (when (and (.exists directory) (.isDirectory directory) (zero? (count (.list directory))))
+        (io/delete-file directory)))))
 
-(defn open-database [path & [backup-fn]]
-  (let [path (to-canonical-path-string path)]
-    (when (@open-databases path)
-      (throw (ex-info "Database Already Open" {:cause :database-open
-                                               :message "The database at this path is already open."
-                                               :path path})))
-    (let [{:keys [root-id id-counter manifest]} (load-manifest path)
-          nodes-offset (load-nodes-offset path)
-          db {:path path
-              :backup-fn backup-fn
-              :write-lock (Object.)
-              :compaction-lock (ReentrantReadWriteLock. true)
-              :metrics (atom {:opened-at (System/nanoTime)
-                              :compactions 0})
-              :data (atom {:root-id root-id
-                           :id-counter id-counter})}]
-      (initialize-database-data! db manifest nodes-offset)
-      (swap! open-databases assoc path db)
-      db)))
+(defn- existing-connection [path backup-fn]
+  (let [path (to-canonical-path-string path)
+        db (@open-databases path)]
+    (when db
+      (if (= backup-fn (:backup-fn db))
+        db
+        (throw (ex-info "Mismatched Backup Functions" {:cause :backup-mismatch
+                                                       :message "Attempted database access with a different backup function"
+                                                       :path path}))))))
+
+(defn- open-new-connection [path backup-fn]
+  (let [path (to-canonical-path-string path)
+        {:keys [root-id id-counter manifest]} (load-manifest path)
+        nodes-offset (load-nodes-offset path)
+        db {:codax.store/is-database true
+            :path path
+            :backup-fn backup-fn
+            :write-lock (Object.)
+            :compaction-lock (ReentrantReadWriteLock. true)
+            :metrics (atom {:opened-at (System/nanoTime)
+                            :compactions 0})
+            :data (atom {:root-id root-id
+                         :id-counter id-counter})}]
+    (initialize-database-data! db manifest nodes-offset)
+    (swap! open-databases assoc path db)
+    db))
+
+(defn open-database
+  "Establishes a new, or fetches the existing, connection to the database at the supplied path.
+
+  If the connection already exists, `backup-fn` must match the existing `backup-fn`.
+  To change the `backup-fn` the database must first be closed."
+  [path & [backup-fn]]
+  (locking connection-lock
+    (or
+     (existing-connection path backup-fn)
+     (open-new-connection path backup-fn))))
+
+(defn is-open? [path-or-db]
+  (let [db (if (string? path-or-db)
+             (get @open-databases (to-canonical-path-string path-or-db))
+             path-or-db)]
+    (if db
+      (not (:is-closed @(:data db)))
+      false)))
+
 
 (defn connection [ path ]
   (let [full-path (to-canonical-path-string path)
@@ -358,7 +394,8 @@
     (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-transaction
                                                        :message "The database object has been invalidated."
                                                        :path (:path database)})))
-    {:db database
+    {:codax.store/is-transaction true
+     :db database
      :root-id root-id
      :id-counter id-counter
      :nodes-offset nodes-offset
@@ -367,14 +404,28 @@
 
 ;;; Macros
 
+(defn assert-db [db & [msg]]
+  (when (not (and (map? db) (:codax.store/is-database db)))
+    (throw (ex-info "Invalid Database" {:cause :invalid-database
+                                        :message (or msg "expected a database")}))))
+
+(defn assert-txn [txn & [msg]]
+  (when (not (and (map? txn) (:codax.store/is-transaction txn)))
+    (throw (ex-info "Invalid Transaction" {:cause :invalid-transaction
+                                           :message (or msg "expected a transaction")}))))
+
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
+     (assert-db db#)
      (locking (:write-lock db#)
-       (let [~tx-symbol (make-transaction db#)]
-         (commit! (do ~@body))))))
+       (let [~tx-symbol (make-transaction db#)
+             result-tx# (do ~@body)]
+         (assert-txn result-tx#  "the body of `with-write-transaction` must evaluate to a transaction")
+         (commit! result-tx#)))))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
+     (assert-db db#)
      (with-read-lock [db#]
        (let [~tx-symbol (make-transaction db#)]
          ~@body))))
@@ -447,7 +498,7 @@
                    (loop [pairs (transient (vec (subseq (:records start-node) >= start)))
                           next-id (:next start-node)]
                      (cond
-                       (nil? next) pairs
+                       (nil? next-id) pairs
                        (and limit (>= (count pairs) limit)) pairs
                        (= next-id (:id end-node)) (reduce conj! pairs (subseq (:records end-node) <= end))
                        :else (let [next-node (get-node txn next-id)]
@@ -455,6 +506,42 @@
                                 (reduce conj! pairs (:records next-node))
                                 (:next next-node)))))))]
     (if (and limit (> (count results) limit))
+      (subvec results 0 limit)
+      results)))
+
+
+;;; Seek Reverse
+
+(defn- track-descent
+  [txn node track k]
+  (loop [node node
+         track track]
+    (if (leaf-node? node)
+      [node track]
+      (let [pred (if (= k ::no-key)
+                   (reverse (:records node))
+                   (rsubseq (:records node) <= k))]
+        (recur (get-node txn (second (first pred)))
+               (concat (map second (rest pred)) track))))))
+
+
+(defn b+seek-reverse [txn start end & {:keys [limit]}]
+  (let [root (get-node txn (:root-id txn))
+        [node track] (track-descent txn root nil end)
+        terminal-node (get-matching-leaf txn root start)
+        results
+        (persistent!
+         (loop [node node
+                track track
+                pairs (transient (vec (rsubseq (:records node) >= start <= end)))]
+           (cond
+             (= (:id terminal-node) (:id node)) pairs
+             (and limit (>= (count pairs) limit)) pairs
+             (empty? track) pairs
+             :else (let [[node track] (track-descent txn (get-node txn (first track)) (rest track) ::no-key)
+                         pairs (reduce conj! pairs (rsubseq (:records node) >= start))]
+                     (recur node track pairs)))))]
+    (if (and limit (>= (count results) limit))
       (subvec results 0 limit)
       results)))
 

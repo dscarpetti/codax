@@ -1,4 +1,4 @@
-(ns codax.util
+(ns codax.tree-info
   (:require
    [clojure.string :as str]
    [codax.store :as store]
