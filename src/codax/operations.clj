@@ -228,3 +228,31 @@
   (when (empty? path) (throw (ex-info "Invalid Path" {:cause :empty-path
                                                       :message "You cannot clear the empty (root) path."})))
   (clear-path tx path))
+
+
+;;;;;
+
+(defn next-id!
+  "Function generates auto incremented id starting from 0 for the specified entity.
+  Parameters:
+    db -- opened database
+    entity -- the entity for which the id should be generated.
+  Return:
+    The value of the next available id for the specified entity.
+  Usage examples:
+    (next-id! db :person) => 0
+    (-> db (next-id! :person)) => 1
+  "
+  [ db entity ]
+  (let [n (atom nil)]    
+    (c/with-write-transaction [db tx]
+      
+      ;; Read previous index value. If it is absent -- use 0 instead;
+      (reset! n (or (c/get-at! db [:codax/indicies entity]) 0))
+      
+      ;; Create or update the next index value with incremented previous value
+      (c/assoc-at tx [:codax/indicies entity] (inc @n)))
+
+    ;; Return original index value
+    @n))
+
