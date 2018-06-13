@@ -322,15 +322,14 @@
 
 ;;;;; Transactions
 
-(defn- update-database! [{:keys [db root-id id-counter manifest]} nodes-offset manifest-delta nodes-by-address]
+(defn- update-database! [{:keys [db root-id id-counter manifest]} nodes-offset manifest-delta dirty-ids nodes-by-address]
   (swap! (:data db)
          (fn [data]
            (let [updated-cache (reduce-kv (fn [c address node]
-                                            (let [old-address (manifest (:id node))
-                                                  c (cache/evict c old-address)]
-                                              (if (not (nil? node))
-                                                (cache/miss c address node)
-                                                c)))
+                                            (let [old-address (manifest (:id node))]
+                                              (-> c
+                                                  (cache/evict old-address)
+                                                  (cache/miss address node))))
                                           (:cache data)
                                           nodes-by-address)]
              (-> data
@@ -339,6 +338,7 @@
                         :id-counter id-counter
                         :writes-since-compaction (inc (:writes-since-compaction data))
                         :nodes-offset nodes-offset)
+                 (update :manifest #(apply dissoc % dirty-ids))
                  (update :manifest merge manifest-delta)))))
   (when (<= compaction-threshold (:writes-since-compaction @(:data db)))
     (compact-database db)))
@@ -351,8 +351,10 @@
     (.write nodes-channel ^ByteBuffer (.flip nodes-buffer))))
 
 (defn commit! [txn]
-  (let [manifest-buffer (ByteBuffer/allocate (* 16 (inc (count (:dirty-nodes txn)))))]
-    (loop [remaining-nodes (:dirty-nodes txn)
+  (let [dirty-ids (keys (:dirty-nodes txn))
+        dirty-nodes (remove (comp nil? second) (:dirty-nodes txn))
+        manifest-buffer (ByteBuffer/allocate (* 16 (inc (count dirty-nodes))))]
+    (loop [remaining-nodes dirty-nodes
            address (:nodes-offset txn)
            manifest-delta {}
            node-buffers []
@@ -366,7 +368,7 @@
           (.putLong manifest-buffer (long 0)) ;; 8 empty bytes indicate the end of a commit
           (.putLong manifest-buffer (long (:root-id txn)))
           (save-buffers! (:db txn) manifest-buffer all-nodes-buffer)
-          (update-database! txn (+ 8 address) manifest-delta nodes-by-address))
+          (update-database! txn (+ 8 address) manifest-delta dirty-ids nodes-by-address))
         (let [[id node] (first remaining-nodes)
               ^bytes encoded-value (nippy/freeze node nippy-options)
               size (count encoded-value)

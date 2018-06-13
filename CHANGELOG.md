@@ -1,5 +1,10 @@
 # Change Log
 
+## 1.2.1
+
+* fix manifest overgrowth bug
+  * references to discarded nodes were not being removed from the manifest which caused the manifest to grow unboundedly. The issue was particularly pronounced in rewrite-heavy workloads.
+
 ## 1.2.0 (2018-01-22)
 
 * seek-support - exposed seeking for records (forward and reverse) with documentation and examples
