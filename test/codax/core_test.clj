@@ -520,3 +520,16 @@
   (is (=
        (get-at! *testing-database*))
       {:foo {:bar "baz"}}))
+
+
+(deftest manifest-overgrowth
+  (let [put! (fn []
+               (doseq [n (range 500)]
+                 (assoc-at! *testing-database* n n)))
+        get-manifest-size #(-> *testing-database* :data deref :manifest count)
+
+        _ (put!)
+        presize (get-manifest-size)
+        _ (put!)
+        postsize (get-manifest-size)]
+    (is (= presize postsize))))
