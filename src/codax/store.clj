@@ -16,7 +16,6 @@
 
 (def order 256)
 (def cache-threshold 64)
-(def compaction-threshold 10000)
 (def nippy-options {:compressor nippy/lz4-compressor})
 (def ^:dynamic *monitor-metrics* nil)
 
@@ -199,32 +198,40 @@
   (move-file-atomically (str path "/nodes_COMPACT") (str path "/nodes"))
   (move-file-atomically (str path "/manifest_COMPACT") (str path "/manifest")))
 
-(defn update-metrics! [db start-compaction-time end-compaction-time]
-  (let [metrics @(:metrics db)
-        last-compacted-at (or (:compacted-at metrics) (:opened-at metrics))
-        compaction-number (inc (:compactions metrics))]
-    (swap! (:metrics db) assoc :compacted-at end-compaction-time :compactions compaction-number)
-    (when *monitor-metrics* (*monitor-metrics* {:compaction-time (- end-compaction-time start-compaction-time)
-                                              :operation-time (- start-compaction-time last-compacted-at)
-                                              :total-open-time (- end-compaction-time (:opened-at metrics))
-                                              :compaction-number compaction-number
-                                              :writes-per-compaction compaction-threshold}))))
+(defn update-metrics! [db start-compaction-time end-compaction-time writes-since-compaction old-manifest-size old-nodes-size]
+  (when *monitor-metrics*
+    (let [metrics @(:metrics db)
+          new-nodes-size (.size (-> db :data deref :nodes-channel))
+          last-compacted-at (or (:compacted-at metrics) (:opened-at metrics))
+          compaction-number (inc (:compactions metrics))]
+      (swap! (:metrics db) assoc :compacted-at end-compaction-time :compactions compaction-number)
+      (when *monitor-metrics* (*monitor-metrics* {:new-manifest-size (* 16 (+ 2 (-> db :data deref :manifest count)))
+                                                  :old-manifest-size old-manifest-size
+                                                  :new-nodes-size new-nodes-size
+                                                  :old-nodes-size old-nodes-size
+                                                  :compaction-time (- end-compaction-time start-compaction-time)
+                                                  :operation-time (- start-compaction-time last-compacted-at)
+                                                  :total-open-time (- end-compaction-time (:opened-at metrics))
+                                                  :compaction-number compaction-number
+                                                  :writes-since-compaction writes-since-compaction})))))
 
 (defn compact-database [db]
   (locking (:write-lock db)
     (let [start-compaction-time (System/nanoTime)
           path (:path db)
-          {:keys [manifest root-id is-closed]} @(:data db)
+          {:keys [manifest root-id is-closed writes-since-compaction ^FileChannel manifest-channel ^FileChannel nodes-channel]} @(:data db)
           _ (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-compaction
                                                                :message "The database object has been invalidated."
-                                                               :path (:path db)})))
+                                                               :path path})))
+          old-manifest-size (.size manifest-channel)
+          old-nodes-size (.size nodes-channel)
           {:keys [new-manifest new-nodes-offset]} (compact-nodes path manifest)]
       (compact-manifest path new-manifest root-id)
       (with-compaction-lock [db]
         (close-file-handles db)
         (relocate-compact-files path (:backup-fn db))
         (initialize-database-data! db new-manifest new-nodes-offset)
-        (update-metrics! db start-compaction-time (System/nanoTime)))
+        (update-metrics! db start-compaction-time (System/nanoTime) writes-since-compaction old-manifest-size old-nodes-size))
       true)))
 
 ;;; Open/Close/Destroy
@@ -340,8 +347,11 @@
                         :nodes-offset nodes-offset)
                  (update :manifest #(apply dissoc % dirty-ids))
                  (update :manifest merge manifest-delta)))))
-  (when (<= compaction-threshold (:writes-since-compaction @(:data db)))
-    (compact-database db)))
+  (let [^FileChannel manifest-channel (-> db :data deref :manifest-channel)
+        size-of-file-manifest (/ (.size manifest-channel) 16)
+        auto-compaction-factor (/ (Math/pow size-of-file-manifest 1.2) (+ 2 (count manifest)))]
+    (when (> auto-compaction-factor 25)
+      (compact-database db))))
 
 (defn- save-buffers! [db ^ByteBuffer manifest-buffer ^ByteBuffer nodes-buffer]
   (let [data @(:data db)
