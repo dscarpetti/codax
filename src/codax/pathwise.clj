@@ -65,7 +65,7 @@
 (defn encode-string [s] s)
 (defn decode-string [s] (string/join s))
 
-(def joda-time-formatter (joda-time-format/formatter :basic-date-time))
+(def joda-time-formatter (joda-time-format/formatters :basic-date-time))
 
 (defn joda-time? [x]
   (instance? org.joda.time.DateTime x))
