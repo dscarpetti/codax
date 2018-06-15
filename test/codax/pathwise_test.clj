@@ -126,6 +126,17 @@
 (defet-new ratio-test-1 1/3)
 (defet-new ratio-test-2 3/9)
 
+;;;; encoding decoding errors
+
+(deftest unrecognized-encoding
+  (try
+    (decode (str (char 0x2) #{:unrecognized} (char 0x00)))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause message hex-code element-as-string]} (ex-data e)]
+        (is (= cause :unrecognized-encoding))
+        (is (= hex-code "0x2"))
+        (is (= element-as-string "#{:unrecognized}"))))))
+
 ;; record test
 
 (defrecord Point [x y])

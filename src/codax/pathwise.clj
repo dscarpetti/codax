@@ -10,6 +10,16 @@
 
 (defmulti decode first)
 
+(defmethod decode :default
+  [unrecognized-el]
+  (let [hex-code (str "0x" (int (char (first unrecognized-el))))
+        s (subs unrecognized-el 1 (dec (count unrecognized-el)))]
+    (throw (ex-info "Path Decoding Error: Unrecognized Encoding"
+                    {:cause :unrecognized-encoding
+                     :message "No matching decoder was found for the given encoded element's prefix"
+                     :hex-code hex-code
+                     :element-as-string s}))))
+
 (defn partially-encode [x]
   (str/replace (encode x) (re-pattern (str +delim+ "+$")) ""))
 
