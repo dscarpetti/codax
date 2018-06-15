@@ -4,6 +4,7 @@
    [codax.pathwise :refer :all]
    [codax.pathwise-legacy :as legacy]
    [clj-time.core :as joda]
+   [clojure.string :as str]
    [clojure.test :refer :all]
    [clojure.pprint :refer [pprint]]))
 
@@ -49,8 +50,11 @@
 
 (defet symbol-val 'a-symbol)
 (defet symbol-val 'ANOTHER-SYMBOL)
+(defet namespaced-symbol-val 'some-ns/a-symbol)
 
 (defet keyword-val :keyword)
+(defet namespaced-keyword-val :some-ns/hi)
+(defet current-namespaced-keyword-val ::keyword)
 
 (defet string-val "string")
 
@@ -103,12 +107,51 @@
 (defet pathological-24 [[[nil[[[[[[[false :a]]][[[[[:b :x]]]]]]]]]]][[:c 4]][[nil]]])
 
 
+;;;; new encoding-type definition
 
-;;;; random path testing
+(defmacro defet-new [name form]
+  `(deftest ~name
+     (let [form# ~form
+           encoded# (encode form#)
+           decoded# (decode encoded#)]
+       (is (= form# decoded#) (str "encoding/decoding failed\n" "before: " form# "\nafter: " decoded#)))))
+
+;; simple type test
+
+;; Note: this is probably not a reasonable thing to do since ratios might be reduced to integers.
+(defpathtype [0x28 clojure.lang.Ratio]
+  str
+  read-string)
+
+(defet-new ratio-test-1 1/3)
+(defet-new ratio-test-2 3/9)
+
+;; record test
+
+(defrecord Point [x y])
+
+(defpathtype [0x100 codax.pathwise_test.Point]
+  #(str (:x %) "x" (:y %))
+  #(let [[x y] (map read-string (str/split % #"x"))]
+     (Point. x y)))
+
+(defet-new point-test-1 (Point. 100 200))
+(defet-new point-test-1 (Point. -100 50))
+
+(def pt1 (Point. 50 70))
+(def pt2 (Point. 90 100))
+
+(defet-new vec-of-new-types-1 [pt1 (Point. -999 4) (Point. 0 0) 1/5 2/8])
+(defet-new vec-of-new-types-1 [pt1 [(Point. -999 4)] (Point. 0 0) [] 1/5 [[]] 2/8])
+(defet-new vec-of-new-and-old-types [:a pt2 :b -1000 1/32 "string" 'symbol])
+
+
+;;;; random path testing (old code)
 
 (defn test-encoding [x & {:keys [hide-success hide-fail]}]
   (let [encoded (encode x)
         decoded (decode encoded)]
+    (is (= decoded x))
     (if (= x decoded)
       (do
         (when (not hide-success) (logln "✓ -- " x))
@@ -176,6 +219,3 @@
 
 (deftest random-path-test
   (is (test-many-random 100 :hide-success true)))
-
-
-;;;; new encoding-type definition
