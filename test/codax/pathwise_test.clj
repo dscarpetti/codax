@@ -142,12 +142,25 @@
 
 ;;;; encoding decoding errors
 
-(deftest unrecognized-encoding
+(deftest no-encoder-for-element
   (try
-    (decode (str (char 0x2) #{:unrecognized} (char 0x00)))
+    (do
+      (encode #{})
+      (throw (ex-info "Test was supposed to throw an error" {:test 'no-encoder-for-element})))
     (catch clojure.lang.ExceptionInfo e
-      (let [{:keys [cause message hex-code element-as-string]} (ex-data e)]
-        (is (= cause :unrecognized-encoding))
+      (let [{:keys [cause type element]} (ex-data e)]
+        (is (= cause :no-matching-encoder))
+        (is (= type clojure.lang.PersistentHashSet))
+        (is (= element #{}))))))
+
+(deftest no-decoder-for-element
+  (try
+    (do
+      (decode (str (char 0x2) #{:unrecognized} (char 0x00)))
+      (throw (ex-info "Test was supposed to throw an error" {:test 'no-decoder-for-element})))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{:keys [cause hex-code element-as-string]} (ex-data e)]
+        (is (= cause :no-matching-decoder))
         (is (= hex-code "0x2"))
         (is (= element-as-string "#{:unrecognized}"))))))
 
