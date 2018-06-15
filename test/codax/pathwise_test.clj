@@ -30,19 +30,33 @@
 (defet positive-infinity Double/POSITIVE_INFINITY)
 
 (defet zero 0)
-(defet zero-float 0.0)
+(defet zero-float (float 0.0))
 (defet negative-0 -0)
-(defet negative-0-float -0.0)
+(defet negative-0-float (float -0.0))
 
-(defet negative-float-1 -1000.999)
-(defet positive-float-1 99999999.123)
-(defet negative-float-2 -1000.999)
-(defet positive-float-2 99999999.123)
+(defet byte-val (byte 127))
+(defet negative-byte-val (byte -127))
 
-(defet negative-int-1 -1234567890)
-(defet positive-int-1 1234567890)
-(defet negative-int-2 -9876543210)
-(defet positive-int-2 9876543210)
+(defet short-val (short 200))
+(defet negative-short-val (short -127))
+
+(defet negative-int-1 (int -12345678))
+(defet positive-int-1 (int 12345678))
+(defet negative-int-2 (int -98765432))
+(defet positive-int-2 (int 98765432))
+
+(defet negative-long-1 (long -1234567890))
+(defet positive-long-1 (long 1234567890))
+(defet negative-long-2 (long -9876543210))
+(defet positive-long-2 (long 9876543210))
+
+(defet negative-float-1 (float -99999999.123))
+(defet positive-float-1 (float 99999999.123))
+
+(defet negative-double-1 (double -1000.999))
+(defet positive-double-1 (double 1000.999))
+(defet negative-double-2 (double -99999999.123))
+(defet positive-double-2 (double 99999999.123))
 
 (defet nil-val nil)
 (defet true-val true)
