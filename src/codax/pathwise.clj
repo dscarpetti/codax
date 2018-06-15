@@ -35,6 +35,7 @@
 (defmacro defpathtype [[hex-code & types] encoder decoder]
   (let [ch (char hex-code)]
     `(do
+       (when (= ~ch +delim+) (throw (Exception. "attempted to define path type using the system-reserved hex-code 0x0")))
        ~@(map (fn [type]
                 `(extend-type ~type
                    PathwiseEncoding

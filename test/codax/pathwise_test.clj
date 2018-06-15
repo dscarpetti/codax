@@ -120,6 +120,12 @@
 (defet pathological-23 [[nil nil[[[[[[[false [Double/NEGATIVE_INFINITY] :a]][[[[[:b :x]]]]]]]]]]][[:c 3]][nil]])
 (defet pathological-24 [[[nil[[[[[[[false :a]]][[[[[:b :x]]]]]]]]]]][[:c 4]][[nil]]])
 
+;;;; invalid path-type definition
+(deftest try-to-overwrite-delim
+  (is (thrown-with-msg? Exception #"attempted to define path type using the system-reserved hex-code 0x0"
+                        (defpathtype [0x00 nil] str str))))
+
+
 
 ;;;; new encoding-type definition
 
