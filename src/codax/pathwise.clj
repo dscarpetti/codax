@@ -10,11 +10,13 @@
 
 (defmulti decode first)
 
+(defn- char->hex-string [c] (str "0x" (Integer/toHexString (int c))))
+
 (defmethod decode :default
   [unrecognized-el]
-  (let [hex-code (str "0x" (int (char (first unrecognized-el))))
+  (let [hex-code (char->hex-string (first unrecognized-el))
         s (subs unrecognized-el 1 (dec (count unrecognized-el)))]
-    (throw (ex-info "Path Element Decoding Error: No Matching Decoder"
+    (throw (ex-info "path-element decoding error: no matching decoder"
                     {:cause :no-matching-decoder
                      :message "No matching decoder was found for the given encoded element's prefix"
                      :hex-code hex-code
@@ -23,7 +25,7 @@
 (extend-type java.lang.Object
   PathwiseEncoding
   (encode [x]
-    (throw (ex-info (str "Path Element Encoding Error: No Matching Encoder For: " (type x))
+    (throw (ex-info (str "path element encoding error: no matching encoder for: " (type x))
                     {:cause :no-matching-encoder
                      :message "No matching encoder was found for the given element's type"
                      :type (type x)
