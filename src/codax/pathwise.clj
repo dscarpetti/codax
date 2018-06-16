@@ -34,6 +34,14 @@
 (defn partially-encode [x]
   (str/replace (encode x) (re-pattern (str +delim+ "+$")) ""))
 
+(defn check-encoding [value]
+  (let [encoded (encode value)
+        decoded (decode encoded)]
+    {:success (= value decoded)
+     :initial value
+     :decoded decoded
+     :encoded (subs encoded 1 (dec (count encoded)))}))
+
 (def check-path-type-associations
   ;; issue warnings for changed path-type redefinitions
   (let [associations (atom {})]
