@@ -37,14 +37,14 @@
 (defn check-encoding
   "encodes and decodes the provided `value` and returns a map of debugging info:
 
-   :success - indicates if the encoding/decoding process was successful
+   :equal - indicates if the decoded value is equal to the initial value
    :initial - the supplied value before encoding
    :decoded - the value after it has been decoded
    :encoded - the encoded (string) representation of the value"
   [value]
   (let [encoded (encode value)
         decoded (decode encoded)]
-    {:success (= value decoded)
+    {:equal (= value decoded)
      :initial value
      :decoded decoded
      :encoded (subs encoded 1 (dec (count encoded)))}))
