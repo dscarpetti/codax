@@ -1,6 +1,19 @@
 # Change Log
 
-## 1.2.1
+## 1.3.0 (2018-06-18)
+
+* dynamic compaction scheduling
+  * better support for smaller databases
+  * closing/opening databases no longer delays compaction
+* rewrite and simplify pathwise encoding engine for clarity and extensibility. Add:
+  * add `defpathtype` - define custom path type encodings by specifying an encoder and decoder
+  * add `check-path-encoding` - helper function for testing new path type encodings
+  * add `path-encoding-assignments` - helper function to view and avoid redefining existing path types
+  * specifiv documentation added to doc/types.md
+* update `nippy` dependency to 2.14.0
+* simplify and update benchmarking
+
+## 1.2.1 (2018-06-13)
 
 * fix manifest overgrowth bug
   * references to discarded nodes were not being removed from the manifest which caused the manifest to grow unboundedly. The issue was particularly pronounced in rewrite-heavy workloads.

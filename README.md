@@ -4,7 +4,7 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.2.0 adds seeking features. See [CHANGELOG](https://github.com/dscarpetti/codax/blob/master/CHANGELOG.md) for more details.
+Version 1.3.0 improves compaction to reduce disk space usage. It also enables custom path type definitions. See [CHANGELOG](https://github.com/dscarpetti/codax/blob/master/CHANGELOG.md) for more details.
 
 ### The Why
 
