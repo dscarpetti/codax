@@ -34,10 +34,24 @@
 (defn partially-encode [x]
   (str/replace (encode x) (re-pattern (str +delim+ "+$")) ""))
 
+(def check-path-type-associations
+  ;; issue warnings for changed path-type redefinitions
+  (let [associations (atom {})]
+    (fn [ch types]
+      (let [as @associations
+            c->ts (keys (filter #(= ch (val %)) as))]
+        (when-not (or (empty? c->ts) (= types c->ts))
+          (println "WARNING: hex-code:" (char->hex-string ch) "is already associated with types:" c->ts "and is now also assigned to:" types))
+        (doseq [t types]
+          (when (and (contains? as t) (not (= (as t) ch)))
+            (println "WARNING: type:" t "is already associated with hex-code:" (char->hex-string (as t)) "reassigning to:" (char->hex-string ch)))
+          (swap! associations assoc t ch))))))
+
 (defmacro defpathtype [[hex-code & types] encoder decoder]
   (let [ch (char hex-code)]
     `(do
        (when (= ~ch +delim+) (throw (Exception. "attempted to define path type using the system-reserved hex-code 0x0")))
+       (check-path-type-associations ~ch (list ~@types))
        ~@(map (fn [type]
                 `(extend-type ~type
                    PathwiseEncoding
