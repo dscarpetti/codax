@@ -1,4 +1,4 @@
-(defproject codax "1.3.0"
+(defproject codax "1.3.1"
   :description "Codax is an idiomatic transactional embedded database for clojure"
   :url "https://github.com/dscarpetti/codax"
   :license {:name "Eclipse Public License"
@@ -7,8 +7,7 @@
                  [clj-time "0.13.0"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.cache "0.6.5"]]
-  :main codax.core
   :target-path "target/%s"
-  :profiles {:uberjar {:aot :all}
+  :profiles {:uberjar {}
              :dev {:dependencies [[org.clojars.kliph/vijual "0.2.7"]]
                    :source-paths ["dev"]}})

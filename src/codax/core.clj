@@ -4,8 +4,7 @@
    [codax.operations :as ops]
    [codax.pathwise :as pathwise]
    [codax.prefix :refer [set-prefix prefix-path]]
-   [codax.store :as store])
-  (:gen-class))
+   [codax.store :as store]))
 
 (defn is-open?
   "Takes a database or a path and returns true if the database is open.
@@ -336,13 +335,3 @@
 (defn path-encoding-assignments
   "fetches a map of types and the string representation of hex-codes presently assigned to encoders and decoders"
   [] (pathwise/encoding-assignments))
-
-;;;; Main
-
-(defn- -main []
-  (clojure.main/repl
-   :init (fn []
-           (in-ns 'codax.core)
-           (require '[clojure.repl :refer :all]
-                    '[clojure.pprint :refer [pprint]]
-                    '[codax.bench.performance :refer [run-benchmark]]))))
