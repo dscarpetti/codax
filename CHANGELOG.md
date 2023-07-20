@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.4.0 (2023-06-20)
+
+* implement upgradable transactions (using `with-upgradable-transaction` macro)
+
 ## 1.3.1 (2019-05-21)
 
 * no longer AOT compiled
