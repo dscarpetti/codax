@@ -324,16 +324,16 @@ Write transactions block other write transactions (though they do not block read
 ;; => 2
 
 (c/with-upgradable-transaction [db tx]
-  (println "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted")
+  (print "on the first run this will print twice because it is evaluated")
+  (print " before the transaction is upgraded and again after the transaction")
+  (println " is upgraded and restarted")
   (let [result-tx (c/assoc-at tx [:something] :somewhere)]
     (println "this will only print once because it occurs after the transaction has upgraded")
     result-tx))
-;; on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted
-;; on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted
+;; on the first run this will print twice...
+;; on the first run this will print twice...
 ;; this will only print once because it occurs after the transaction has upgraded
 ;; => nil
-
-
 
 (c/close-database! db)
 
