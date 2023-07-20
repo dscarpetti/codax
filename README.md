@@ -91,15 +91,15 @@ See [Seek Examples](#seek-examples)
 A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions:
 
   - they are **limited to the following types**:
-	- Symbols
-	- Keywords
-	- Strings
-	- Numbers (float/double use is _strongly discouraged_)
-	- true
-	- false
-	- nil
-	- java.time.Instant
-	- org.joda.time.DateTime
+    - Symbols
+    - Keywords
+    - Strings
+    - Numbers (float/double use is _strongly discouraged_)
+    - true
+    - false
+    - nil
+    - java.time.Instant
+    - org.joda.time.DateTime
   - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
@@ -207,46 +207,46 @@ Write transactions block other write transactions (though they do not block read
   "create a user and assign them an id"
   [username]
   (c/with-write-transaction [db tx]
-	(when (c/get-at tx [:usernames username] )
-	  (throw (Exception. "username already exists")))
-	(let [user-id (c/get-at tx [:counters :id])
-		  user {:id user-id
-				:username username
-				:timestamp (System/currentTimeMillis)}]
-	  (-> tx
-		  (c/assoc-at [:users user-id] user)
-		  (c/assoc-at [:usernames username] user-id)
-		  (c/update-at [:counters :id] inc)
-		  (c/update-at [:counters :users] inc)))))
+    (when (c/get-at tx [:usernames username] )
+      (throw (Exception. "username already exists")))
+    (let [user-id (c/get-at tx [:counters :id])
+          user {:id user-id
+                :username username
+                :timestamp (System/currentTimeMillis)}]
+      (-> tx
+          (c/assoc-at [:users user-id] user)
+          (c/assoc-at [:usernames username] user-id)
+          (c/update-at [:counters :id] inc)
+          (c/update-at [:counters :users] inc)))))
 
 (defn get-user
   "fetch a user by their username"
   [username]
   (c/with-read-transaction [db tx]
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (c/get-at tx [:users user-id]))))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (c/get-at tx [:users user-id]))))
 
 (defn rename-user
   "change a username"
   [username new-username]
   (c/with-write-transaction [db tx]
-	(when (c/get-at tx [:usernames new-username] )
-	  (throw (Exception. "username already exists")))
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (-> tx
-		  (c/dissoc-at [:usernames username])
-		  (c/assoc-at [:usernames new-username] user-id)
-		  (c/assoc-at [:users user-id :username] new-username)))))
+    (when (c/get-at tx [:usernames new-username] )
+      (throw (Exception. "username already exists")))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (-> tx
+          (c/dissoc-at [:usernames username])
+          (c/assoc-at [:usernames new-username] user-id)
+          (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
   "remove a user"
   [username]
   (c/with-write-transaction [db tx]
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (-> tx
-		  (c/dissoc-at [:username username])
-		  (c/dissoc-at [:users user-id])
-		  (c/update-at [:counters :users] dec)))))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (-> tx
+          (c/dissoc-at [:username username])
+          (c/dissoc-at [:users user-id])
+          (c/update-at [:counters :users] dec)))))
 
 
 ;;;;; edit users
