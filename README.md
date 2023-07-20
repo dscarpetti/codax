@@ -46,7 +46,11 @@ These take a database argument and a transaction-symbol and bind the symbol to a
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
-  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`). Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`. See [Example](#upgradable-transaction-example).
+  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`).
+    - Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`.
+    - When a transaction is upgraded the body of the transaction is restarted so *preceding forms may be evaluated twice*
+    - Body must evaluate to a transaction or an exception will be thrown
+    - See [Example](#upgradable-transaction-example).
 
 **In-Transaction Functions**
 
@@ -311,16 +315,27 @@ Write transactions block other write transactions (though they do not block read
 (def db (c/open-database! "data/demo-database"))
 
 (maybe-update-a db "hello")
-;; 1
+;; => 1
 
 (maybe-update-a db "hello")
-;; 1
+;; => 1
 
 (maybe-update-a db "world")
-;; 2
+;; => 2
+
+(c/with-upgradable-transaction [db tx]
+  (println "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted")
+  (let [result-tx (c/assoc-at tx [:something] :somewhere)]
+    (println "this will only print once because it occurs after the transaction has upgraded")
+    result-tx))
+;; on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted
+;; on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted
+;; this will only print once because it occurs after the transaction has upgraded
+;; => nil
 
 
- (c/close-database! db)
+
+(c/close-database! db)
 
 ```
 
