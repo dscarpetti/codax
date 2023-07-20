@@ -90,6 +90,7 @@
   by default, it does not)."
   [tx path val-or-map]
   (store/assert-txn tx)
+  (store/maybe-upgrade-txn tx)
   (ops/assoc-path tx (prefix-path tx path) val-or-map))
 
 (defn update-at
@@ -102,11 +103,13 @@
   by default, it does not)."
   [tx path f & args]
   (store/assert-txn tx)
+  (store/maybe-upgrade-txn tx)
   (apply ops/update-path tx (prefix-path tx path) f args))
 
 (defn merge-at
   [tx path m]
   (store/assert-txn tx)
+  (store/maybe-upgrade-txn tx)
   (apply ops/update-path tx (prefix-path tx path) merge m))
 
 
@@ -120,6 +123,7 @@
   by default, it does not)."
   [tx path]
   (store/assert-txn tx)
+  (store/maybe-upgrade-txn tx)
   (ops/delete-path tx (prefix-path tx path)))
 
 ;;;;
@@ -209,6 +213,33 @@
   `(store/with-read-transaction [~database ~tx-symbol]
      (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
        ~@body)))
+
+(defmacro with-upgradable-transaction
+  "Creates an upgradable transaction object and assigns it to the `tx-symbol`.
+  This transaction object can be passed to any of the transaction functions.
+  The `body` must evaluate to this object so it can potentially be committed.
+
+  The transaction begins as a read transaction. If a modifying function is
+  encountered the transaction is restarted as a write transaction. (Modifying
+  functions are `assoc-at`, `update-at`, `merge-at`, `dissoc-at`)
+
+  Evaluates to nil unless a `:result-path` is supplied in which case it
+  evaluates to the result of calling `(get-at tx <:result-path>)` at the
+  end of the transaction.
+
+  NOTE: any code within a transactions that precedes an upgrade will be
+  re-evaluated when the transaction is upgraded."
+  [[database tx-symbol & {:keys [prefix result-path]}] & body]
+  (if (nil? result-path)
+    `(store/with-upgradable-transaction [~database ~tx-symbol]
+       (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
+         ~@body))
+    `(let [res# (atom nil)]
+       (store/with-upgradable-transaction [~database ~tx-symbol]
+         (let [tx-res# (do ~@body)]
+           (reset! res# (get-at tx-res# ~result-path))
+           tx-res#))
+       @res#)))
 
 ;;;; Direct Database Convenience Functions
 

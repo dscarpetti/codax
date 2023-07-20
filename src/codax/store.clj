@@ -419,7 +419,8 @@
 (defn assert-txn [txn & [msg]]
   (when (not (and (map? txn) (:codax.store/is-transaction txn)))
     (throw (ex-info "Invalid Transaction" {:cause :invalid-transaction
-                                           :message (or msg "expected a transaction")}))))
+                                           :message (or msg "expected a transaction")
+                                           :got txn}))))
 
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
@@ -436,6 +437,28 @@
      (with-read-lock [db#]
        (let [~tx-symbol (make-transaction db#)]
          ~@body))))
+
+(defn maybe-upgrade-txn [tx]
+  (if (:upgradable tx)
+    (throw (ex-info "Upgrading Transaction" {:upgrade-transaction true})))
+    tx)
+
+(defmacro with-upgradable-transaction [[database tx-symbol] & body]
+  `(let [db# ~database]
+     (assert-db db#)
+     (try
+       (with-read-lock [db#]
+         (let [~tx-symbol (assoc (make-transaction db#) :upgradable true)]
+           ~@body))
+       (catch clojure.lang.ExceptionInfo e#
+         (if (:upgrade-transaction (ex-data e#))
+           (locking (:write-lock db#)
+             (let [~tx-symbol (make-transaction db#)
+                   result-tx# (do ~@body)]
+               (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
+               (commit! result-tx#)))
+           (throw e#))))
+     nil))
 
 ;;; Node Fetching
 

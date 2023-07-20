@@ -296,7 +296,21 @@
           {:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
           {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})))))
 
+(defn upgradable-transaction-example-body [db]
+  (let [maybe-update-a (fn [db value]
+                         (c/with-upgradable-transaction [db tx :result-path [:change-counter]]
+                           (if (= value (c/get-at tx [:a]))
+                             tx
+                             (-> tx
+                                 (c/update-at [:change-counter] (fn [b] (if b (inc b) 1)))
+                                 (c/assoc-at [:a] value)))))]
 
+
+    (is (= (maybe-update-a db "hello") 1))
+
+    (is (= (maybe-update-a db "hello") 1))
+
+    (is (= (maybe-update-a db "world") 2))))
 
 (deftest simple-use
   (c/destroy-database! "test-databases/example-database")
@@ -336,5 +350,13 @@
     (directory-example-body db)
     (messaging-example-body db)
     ;;(clojure.pprint/pprint (c/get-at! db))
+    (c/close-database! db)
+    (c/destroy-database! "test-databases/example-database")))
+
+(deftest upgradable-transaction-example
+  (c/destroy-database! "test-databases/example-database")
+  (c/destroy-database! "test-databases/example-database")
+  (let [db (c/open-database! "test-databases/example-database")]
+    (upgradable-transaction-example-body db)
     (c/close-database! db)
     (c/destroy-database! "test-databases/example-database")))

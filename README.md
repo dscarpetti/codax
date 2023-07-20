@@ -46,6 +46,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
+  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`). Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`. See [Example](#upgradable-transaction-example).
 
 **In-Transaction Functions**
 
@@ -287,6 +288,39 @@ Write transactions block other write transactions (though they do not block read
 
 
 (c/close-database! db)
+
+```
+
+### Upgradable Transaction Example
+
+``` clojure
+
+(defn maybe-update-a
+  "If the value at `[:a]` in `db` is not= `value` then set it to `value`
+  and increment the `:change-counter`.
+
+  Return the final value of `:change-counter`"
+  [db value]
+  (c/with-upgradable-transaction [db tx :result-path [:change-counter]]
+    (if (= value (c/get-at tx [:a]))
+      tx
+      (-> tx
+        (c/update-at [:change-counter] (fn [b] (if b (inc b) 1)))
+        (c/assoc-at [:a] value)))))
+
+(def db (c/open-database! "data/demo-database"))
+
+(maybe-update-a db "hello")
+;; 1
+
+(maybe-update-a db "hello")
+;; 1
+
+(maybe-update-a db "world")
+;; 2
+
+
+ (c/close-database! db)
 
 ```
 
@@ -534,7 +568,7 @@ Insights, suggestions, and PRs are very welcome.
 
 ## License
 
-Copyright © 2018 David Scarpetti
+Copyright © 2023 David Scarpetti
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
