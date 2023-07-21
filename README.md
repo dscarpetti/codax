@@ -50,7 +50,8 @@ These take a database argument and a transaction-symbol and bind the symbol to a
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
   - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`).
     - Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`.
-    - When a transaction is upgraded the body of the transaction is restarted so *preceding forms may be evaluated twice*
+    - When a transaction is upgraded the body of the transaction will be restarted if another write transaction was started on on another thread while the upgradable transaction was executing so *preceding forms may be evaluated twice*
+    - If `:throw-on-restart` is true, the transaction will *not restart* and will instead throw an `ExceptionInfo` with data `{:cause :upgrade-restart-required}`
     - Body must evaluate to a transaction or an exception will be thrown
     - See [Example](#upgradable-transaction-example).
 
@@ -325,17 +326,27 @@ Write transactions block other write transactions (though they do not block read
 (maybe-update-a db "world")
 ;; => 2
 
-(c/with-upgradable-transaction [db tx]
-  (print "on the first run this will print twice because it is evaluated")
-  (print " before the transaction is upgraded and again after the transaction")
-  (println " is upgraded and restarted")
-  (let [result-tx (c/assoc-at tx [:something] :somewhere)]
-    (println "this will only print once because it occurs after the transaction has upgraded")
-    result-tx))
+(let [tx1
+      (future
+        (c/with-upgradable-transaction [db tx]
+          (print "on the first run this will print twice because it is evaluated")
+          (print " before the transaction is upgraded and again after the transaction")
+          (println " is upgraded because the interleaved write causes it to restart")
+          (let [result-tx (c/assoc-at tx [:something] :somewhere)]
+            (println "this will only print once because it occurs after the transaction has upgraded")
+            result-tx))
+
+      tx2
+      (future (c/with-upgradable-transaction [db tx]
+       (c/assoc-at tx [:something-else] :somewhere-else)))]
+
+  [@tx2
+   @tx1])
+
 ;; on the first run this will print twice...
 ;; on the first run this will print twice...
 ;; this will only print once because it occurs after the transaction has upgraded
-;; => nil
+;; => [nil nil]
 
 (c/close-database! db)
 

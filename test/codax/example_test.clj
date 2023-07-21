@@ -313,18 +313,25 @@
     (is (= (maybe-update-a db "world") 2))
 
     (let [res (atom nil)]
-
       (is (= (with-out-str
-               (reset! res (c/with-upgradable-transaction [db tx]
-                             (print "on the first run this will print twice because it is evaluated")
-                             (print " before the transaction is upgraded and again after the transaction")
-                             (println " is upgraded and restarted")
-                             (let [result-tx (c/assoc-at tx [:something] :somewhere)]
-                               (println "this will only print once because it occurs after the transaction has upgraded")
-                               result-tx))))
+               (reset! res
+                       (let [f1
+                             (future
+                               (c/with-upgradable-transaction [db tx]
+                                 (println "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted")
+                                 (Thread/sleep 1000)
+                                 (let [result-tx (c/assoc-at tx [:something] :somewhere)]
+                                   (println "this will only print once because it occurs after the transaction has upgraded")
+                                   result-tx)))
+                             f2
+                             (future (c/with-upgradable-transaction [db tx]
+                                       (c/assoc-at tx [:something2] :somewhere2)))]
+
+                         [@f2
+                          @f1])))
              "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted\non the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted\nthis will only print once because it occurs after the transaction has upgraded\n"))
 
-      (is (nil? @res)))))
+      (is (= [nil nil] @res)))))
 
 
 (deftest simple-use

@@ -10,7 +10,7 @@
    [java.nio ByteBuffer]
    [java.nio.channels FileChannel]
    [java.nio.file Files Paths StandardCopyOption StandardOpenOption]
-   [java.util.concurrent.locks ReentrantReadWriteLock]))
+   [java.util.concurrent.locks ReentrantReadWriteLock ReentrantLock]))
 
 ;;;;; Settings
 
@@ -127,6 +127,21 @@
        (do ~@body)
        (finally (.unlock (.writeLock lock#))))))
 
+(defmacro with-write-lock [[database increment-counter] & body]
+  (if increment-counter
+    `(let [[^ReentrantLock lock# counter#] (:write-lock ~database)]
+       (.lock lock#)
+       (try
+         (do
+           ~@body
+           (swap! counter# inc))
+         (finally (.unlock lock#))))
+    `(let [[^ReentrantLock lock#] (:write-lock ~database)]
+       (.lock lock#)
+       (try
+         (do ~@body)
+         (finally (.unlock lock#))))))
+
 ;;; Compaction
 
 (defn- compact-manifest [path manifest root-id]
@@ -216,7 +231,7 @@
                                                   :writes-since-compaction writes-since-compaction})))))
 
 (defn compact-database [db]
-  (locking (:write-lock db)
+  (with-write-lock [db false]
     (let [start-compaction-time (System/nanoTime)
           path (:path db)
           {:keys [manifest root-id is-closed writes-since-compaction ^FileChannel manifest-channel ^FileChannel nodes-channel]} @(:data db)
@@ -245,7 +260,7 @@
                   path-or-db
                   (:path path-or-db)))]
       (when-let [open-db (@open-databases path)]
-        (locking (:write-lock open-db)
+        (with-write-lock [open-db false]
           (with-compaction-lock [open-db]
             (when (not (:is-closed @(:data open-db)))
               (close-file-handles open-db)
@@ -297,7 +312,7 @@
         db {:codax.store/is-database true
             :path path
             :backup-fn backup-fn
-            :write-lock (Object.)
+            :write-lock [(ReentrantLock. true) (atom 0)]
             :compaction-lock (ReentrantReadWriteLock. true)
             :metrics (atom {:opened-at (System/nanoTime)
                             :compactions 0})
@@ -425,11 +440,12 @@
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
      (assert-db db#)
-     (locking (:write-lock db#)
+     (with-write-lock [db# true]
        (let [~tx-symbol (make-transaction db#)
              result-tx# (do ~@body)]
          (assert-txn result-tx#  "the body of `with-write-transaction` must evaluate to a transaction")
-         (commit! result-tx#)))))
+         (commit! result-tx#)))
+     nil))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
@@ -438,26 +454,49 @@
        (let [~tx-symbol (make-transaction db#)]
          ~@body))))
 
-(defn maybe-upgrade-txn [tx]
-  (if (:upgradable tx)
-    (throw (ex-info "Upgrading Transaction" {:upgrade-transaction true})))
-    tx)
+(defn throw-upgrade-restart [tx]
+  (throw (ex-info "Upgrading Transaction" {:cause :upgrade-restart-required
+                                           :message "upgrading the transaction requires restarting it"
+                                           :db-path (-> tx :db :path)
+                                           :upgrade-transaction true})))
 
-(defmacro with-upgradable-transaction [[database tx-symbol] & body]
+(defn maybe-upgrade-txn [{:keys [upgrade-nonce] :as tx}]
+  (if upgrade-nonce
+    (let [[^ReentrantLock lock counter] (:write-lock (:db tx))
+          acquired-lock (.tryLock lock)]
+      (if acquired-lock
+        (when (not= @counter upgrade-nonce)
+          (.unlock lock)
+          (throw-upgrade-restart tx))
+        (throw-upgrade-restart tx)))
+    tx))
+
+(defmacro with-upgradable-transaction [[database tx-symbol throw-on-restart] & body]
   `(let [db# ~database]
      (assert-db db#)
-     (try
-       (with-read-lock [db#]
-         (let [~tx-symbol (assoc (make-transaction db#) :upgradable true)]
-           ~@body))
-       (catch clojure.lang.ExceptionInfo e#
-         (if (:upgrade-transaction (ex-data e#))
-           (locking (:write-lock db#)
-             (let [~tx-symbol (make-transaction db#)
-                   result-tx# (do ~@body)]
-               (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
-               (commit! result-tx#)))
-           (throw e#))))
+     (let [[^ReentrantLock lock# counter#] (:write-lock db#)]
+       (when (.isHeldByCurrentThread lock#)
+         (throw (ex-info "Nested Upgradable Transaction" {:cause :nested-upgradable-transaction
+                                                          :message "upgradable transactions cannot be started within another transaction"})))
+       (try
+         (with-read-lock [db#]
+           (let [~tx-symbol (assoc (make-transaction db#) :upgrade-nonce @counter#)
+                 result-tx# (do ~@body)]
+             (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
+             (when (.isHeldByCurrentThread lock#)
+               (commit! result-tx#)
+               (swap! counter# inc))))
+         (catch clojure.lang.ExceptionInfo e#
+           (if (and (:upgrade-transaction (ex-data e#)) (not ~throw-on-restart))
+             (with-write-lock [db# true]
+               (let [~tx-symbol (make-transaction db#)
+                     result-tx# (do ~@body)]
+                 (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
+                 (commit! result-tx#)))
+             (throw e#)))
+         (finally
+           (while (.isHeldByCurrentThread lock#)
+             (.unlock lock#)))))
      nil))
 
 ;;; Node Fetching

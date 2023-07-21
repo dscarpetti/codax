@@ -227,15 +227,17 @@
   evaluates to the result of calling `(get-at tx <:result-path>)` at the
   end of the transaction.
 
-  NOTE: any code within a transactions that precedes an upgrade will be
-  re-evaluated when the transaction is upgraded."
-  [[database tx-symbol & {:keys [prefix result-path]}] & body]
+  If another write transaction is initiated between the start of the transaction
+  and an upgrade the body will be re-evaluated unless `:throw-on-restart` is
+  true, in which case a an ExceptionInfo is thrown with the data:
+  `{:cause :upgrade-restart-required}`"
+  [[database tx-symbol & {:keys [prefix result-path throw-on-restart]}] & body]
   (if (nil? result-path)
-    `(store/with-upgradable-transaction [~database ~tx-symbol]
+    `(store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-restart]
        (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
          ~@body))
     `(let [res# (atom nil)]
-       (store/with-upgradable-transaction [~database ~tx-symbol]
+       (store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-restart]
          (let [tx-res# (do ~@body)]
            (reset! res# (get-at tx-res# ~result-path))
            tx-res#))
