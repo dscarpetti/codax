@@ -34,6 +34,8 @@ I have successfully used this library in production environments. That said, the
 
 ### Basic API
 
+*Note: all public api symbols have doc-strings which may provide additional details.*
+
 **Database Functions**
 
   - `open-database!` - Opens or creates a database, or returns an existing database connection if it's already open
@@ -110,8 +112,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
   - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
-If you are you need support for additional types, please review [doc/types.md](https://github.com/dscarpetti/codax/blob/master/doc/types.md).
-
+If you need support for additional types, please review [doc/types.md](https://github.com/dscarpetti/codax/blob/master/doc/types.md).
 
 ### Conformant Values
 
