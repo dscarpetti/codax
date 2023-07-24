@@ -256,7 +256,8 @@
          ~@body))
     `(let [res# (atom nil)]
        (store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-restart]
-         (let [tx-res# (do ~@body)]
+         (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)
+               tx-res# (do ~@body)]
            (reset! res# (get-at tx-res# ~result-path))
            tx-res#))
        @res#)))
