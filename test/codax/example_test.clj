@@ -313,25 +313,93 @@
     (is (= (maybe-update-a db "world") 2))
 
     (let [res (atom nil)]
-      (is (= (with-out-str
-               (reset! res
-                       (let [f1
-                             (future
-                               (c/with-upgradable-transaction [db tx]
-                                 (println "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted")
-                                 (Thread/sleep 1000)
-                                 (let [result-tx (c/assoc-at tx [:something] :somewhere)]
-                                   (println "this will only print once because it occurs after the transaction has upgraded")
-                                   result-tx)))
-                             f2
-                             (future (c/with-upgradable-transaction [db tx]
-                                       (c/assoc-at tx [:something2] :somewhere2)))]
+      (is (= "ABAC"
+             (with-out-str
+               (let [tx1
+                     (future
+                       (c/with-upgradable-transaction [db tx]
+                         (let [read-value (c/get-at tx [:somewhere])]
+                           (print "A")
+                           (Thread/sleep 300)
+                           (let [result-tx (c/assoc-at tx [:somewhere-else] :something)]
+                             (print "C")
+                             result-tx))))
+                     tx2
+                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                               (Thread/sleep 150)
+                               (print "B")
+                               (c/assoc-at tx [:somewhere] :something-else)))]
+                 (reset! res [@tx2
+                              @tx1])))))
+      (is (= @res [nil nil])))
 
-                         [@f2
-                          @f1])))
-             "on the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted\non the first run this will print twice because it is evaluated before the transaction is upgraded and again after the transaction is upgraded and restarted\nthis will only print once because it occurs after the transaction has upgraded\n"))
+    ;; Conflict...
+    ;; A. this will print twice...
+    ;; B. interleave a write...
+    ;; A. this will print twice...
+    ;; C. but this will only print once...
+    ;; => [nil nil]
 
-      (is (= [nil nil] @res)))))
+    (let [res (atom nil)]
+      (is (= "ABC"
+             (with-out-str
+               (let [
+                     tx1
+                     (future
+                       (c/with-upgradable-transaction [db tx]
+                         (let [read-value (c/get-at tx [:a-place])]
+                           (print "A")
+                           (Thread/sleep 300)
+                           (let [result-tx (c/assoc-at tx [:c-place] :something)]
+                             (print "C")
+                             result-tx))))
+                     tx2
+                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                               (Thread/sleep 150)
+                               (print "B")
+                               (c/assoc-at tx [:b-place] :something-else)))]
+                 (reset! res [@tx2 @tx1])))))
+      (is (= @res [nil nil])))
+
+    ;; No Conflict:
+    ;; A. this will only print once...
+    ;; B. interleave a write...
+    ;; C. and this will also only print once.
+    ;; => [nil nil]
+
+    (let [res (atom nil)]
+      (is (= "X"
+             (with-out-str
+               (let [tx1
+                     (future
+                       (try
+                         (c/with-upgradable-transaction [db tx :throw-on-restart true]
+                           (c/get-at tx [:a])
+                           (Thread/sleep 300)
+                           (c/assoc-at tx [:a] :something))
+                         (catch clojure.lang.ExceptionInfo e
+                           (if (= (:cause (ex-data e)) :upgrade-restart-required)
+                             (print "X")
+                             (throw e)))))
+                     tx2
+                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                               (Thread/sleep 150)
+                               (c/assoc-at tx [:a] :something-else)))]
+                 (reset! res [@tx2 @tx1])))))
+      (is (= @res [nil nil])))
+
+    ;; Custom Conflict Handling:
+    ;; Someone else wrote to [:a]...
+    ;; => [nil nil]
+
+
+    (is (= 12345 (c/with-upgradable-transaction [db tx :result-path [:my-result]]
+                   (c/assoc-at tx [:my-result] 12345))))
+
+    ;; Fetching a Result:
+    ;; => 12345
+    ))
+
 
 
 (deftest simple-use

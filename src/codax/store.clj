@@ -127,20 +127,12 @@
        (do ~@body)
        (finally (.unlock (.writeLock lock#))))))
 
-(defmacro with-write-lock [[database increment-counter] & body]
-  (if increment-counter
-    `(let [[^ReentrantLock lock# counter#] (:write-lock ~database)]
-       (.lock lock#)
-       (try
-         (do
-           ~@body
-           (swap! counter# inc))
-         (finally (.unlock lock#))))
-    `(let [[^ReentrantLock lock#] (:write-lock ~database)]
-       (.lock lock#)
-       (try
-         (do ~@body)
-         (finally (.unlock lock#))))))
+(defmacro with-write-lock [[database] & body]
+  `(let [[^ReentrantLock lock#] (:write-lock ~database)]
+     (.lock lock#)
+     (try
+       (do ~@body)
+       (finally (.unlock lock#)))))
 
 ;;; Compaction
 
@@ -231,7 +223,7 @@
                                                   :writes-since-compaction writes-since-compaction})))))
 
 (defn compact-database [db]
-  (with-write-lock [db false]
+  (with-write-lock [db]
     (let [start-compaction-time (System/nanoTime)
           path (:path db)
           {:keys [manifest root-id is-closed writes-since-compaction ^FileChannel manifest-channel ^FileChannel nodes-channel]} @(:data db)
@@ -260,7 +252,7 @@
                   path-or-db
                   (:path path-or-db)))]
       (when-let [open-db (@open-databases path)]
-        (with-write-lock [open-db false]
+        (with-write-lock [open-db]
           (with-compaction-lock [open-db]
             (when (not (:is-closed @(:data open-db)))
               (close-file-handles open-db)
@@ -312,7 +304,7 @@
         db {:codax.store/is-database true
             :path path
             :backup-fn backup-fn
-            :write-lock [(ReentrantLock. true) (atom 0)]
+            :write-lock [(ReentrantLock. true) (atom #{})]
             :compaction-lock (ReentrantReadWriteLock. true)
             :metrics (atom {:opened-at (System/nanoTime)
                             :compactions 0})
@@ -422,6 +414,7 @@
      :id-counter id-counter
      :nodes-offset nodes-offset
      :manifest manifest
+     :touched-paths []
      :dirty-nodes {}}))
 
 ;;; Macros
@@ -437,14 +430,20 @@
                                            :message (or msg "expected a transaction")
                                            :got txn}))))
 
+(defn update-touched-paths! [tx all-watched-paths]
+  (let [touched-paths (:touched-paths tx)]
+    (doseq [watched-path-set @all-watched-paths]
+      (swap! watched-path-set into touched-paths))))
+
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
      (assert-db db#)
-     (with-write-lock [db# true]
+     (with-write-lock [db#]
        (let [~tx-symbol (make-transaction db#)
              result-tx# (do ~@body)]
          (assert-txn result-tx#  "the body of `with-write-transaction` must evaluate to a transaction")
-         (commit! result-tx#)))
+         (commit! result-tx#)
+         (update-touched-paths! result-tx# ((:write-lock db#) 1))))
      nil))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
@@ -460,43 +459,95 @@
                                            :db-path (-> tx :db :path)
                                            :upgrade-transaction true})))
 
-(defn maybe-upgrade-txn [{:keys [upgrade-nonce] :as tx}]
-  (if upgrade-nonce
-    (let [[^ReentrantLock lock counter] (:write-lock (:db tx))
-          acquired-lock (.tryLock lock)]
-      (if acquired-lock
-        (when (not= @counter upgrade-nonce)
-          (.unlock lock)
-          (throw-upgrade-restart tx))
-        (throw-upgrade-restart tx)))
-    tx))
+(defn view-path! [{:keys [upgrade-viewed-paths] :as tx} path]
+  (when upgrade-viewed-paths
+    (swap! upgrade-viewed-paths conj path))
+  tx)
+
+(defn- mutual-prefix? [a b]
+  (let [end (min (count a) (count b))]
+    (loop [i 0]
+      (cond
+        (= i end) true
+        (not= (a i) (b i)) false
+        :else (recur (inc i))))))
+
+(defn- upgrade-safe? [watched-paths viewed-paths]
+  (not
+   (reduce (fn [_ watched]
+             (let [x (reduce (fn [_ viewed]
+                               (assert (= (mutual-prefix? watched viewed)
+                                          (mutual-prefix? viewed watched)))
+                               (when (mutual-prefix? watched viewed)
+                                 (reduced true)))
+                             nil
+                             viewed-paths)]
+               (when x (reduced true))))
+           nil
+           watched-paths)))
+
+(defn reset-safe! [a v]
+  (if (nil? v)
+    (assert (not (nil? @a)))
+    (assert (nil? @a)))
+  (reset! a v))
+
+(defn touch-path! [{:keys [upgrade-lock] :as tx} path]
+  (let [tx (update tx :touched-paths conj path)]
+    (if (and upgrade-lock (not (identical? @upgrade-lock :write)))
+      (let [[^ReentrantLock write-lock all-watched-paths] (:write-lock (:db tx))
+            upgrade-watched-paths (:upgrade-watched-paths tx)
+            upgrade-viewed-paths (:upgrade-viewed-paths tx)]
+        (.unlock (.readLock ^ReentrantReadWriteLock (:compaction-lock (:db tx))))
+        (reset-safe! upgrade-lock nil)
+        (.lock write-lock)
+        (reset-safe! upgrade-lock :write)
+        (swap! all-watched-paths disj upgrade-watched-paths)
+        (let [tx (assoc (make-transaction (:db tx))
+                        :touched-paths (:touched-paths tx)
+                        :upgrade-watched-paths upgrade-watched-paths
+                        :upgrade-viewed-paths upgrade-viewed-paths)]
+          (when-not (upgrade-safe? @upgrade-watched-paths @upgrade-viewed-paths)
+            (throw-upgrade-restart tx))
+          tx))
+      tx)))
 
 (defmacro with-upgradable-transaction [[database tx-symbol throw-on-restart] & body]
   `(let [db# ~database]
      (assert-db db#)
-     (let [[^ReentrantLock lock# counter#] (:write-lock db#)]
-       (when (.isHeldByCurrentThread lock#)
-         (throw (ex-info "Nested Upgradable Transaction" {:cause :nested-upgradable-transaction
-                                                          :message "upgradable transactions cannot be started within another transaction"})))
+     (let [[^ReentrantLock write-lock# all-watched-paths#] (:write-lock db#)
+           ^ReentrantReadWriteLock compaction-lock# (:compaction-lock ~database)
+           read-lock# (.readLock compaction-lock#)
+           watched-paths# (atom [])
+           active-lock# (atom :read)]
        (try
-         (with-read-lock [db#]
-           (let [~tx-symbol (assoc (make-transaction db#) :upgrade-nonce @counter#)
+         (do
+           (.lock read-lock#)
+           (swap! all-watched-paths# conj watched-paths#)
+           (let [~tx-symbol (assoc (make-transaction db#)
+                                   :upgrade-watched-paths watched-paths#
+                                   :upgrade-viewed-paths (atom [])
+                                   :upgrade-lock active-lock#)
                  result-tx# (do ~@body)]
              (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
-             (when (.isHeldByCurrentThread lock#)
+             (when (identical? @active-lock# :write)
                (commit! result-tx#)
-               (swap! counter# inc))))
+               (update-touched-paths! result-tx# all-watched-paths#))))
          (catch clojure.lang.ExceptionInfo e#
            (if (and (:upgrade-transaction (ex-data e#)) (not ~throw-on-restart))
-             (with-write-lock [db# true]
+             (with-write-lock [db#]
                (let [~tx-symbol (make-transaction db#)
                      result-tx# (do ~@body)]
                  (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
-                 (commit! result-tx#)))
+                 (commit! result-tx#)
+                 (update-touched-paths! result-tx# all-watched-paths#)))
              (throw e#)))
          (finally
-           (while (.isHeldByCurrentThread lock#)
-             (.unlock lock#)))))
+           (swap! all-watched-paths# disj watched-paths#)
+           (case @active-lock#
+             :read (.unlock read-lock#)
+             :write (.unlock write-lock#)
+             nil))))
      nil))
 
 ;;; Node Fetching
@@ -799,7 +850,7 @@
          total 0]
     (if node-id
       (let [node (get-node txn node-id)]
-        (recur (:next node)
+        (recur (long (:next node))
                (+ total (count (:records node)))))
       total)))
 

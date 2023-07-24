@@ -50,9 +50,9 @@ These take a database argument and a transaction-symbol and bind the symbol to a
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
   - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`).
     - Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`.
-    - When a transaction is upgraded the body of the transaction will be restarted if another write transaction was started on on another thread while the upgradable transaction was executing so *preceding forms may be evaluated twice*
-    - If `:throw-on-restart` is true, the transaction will *not restart* and will instead throw an `ExceptionInfo` with data `{:cause :upgrade-restart-required}`
-    - Body must evaluate to a transaction or an exception will be thrown
+    - If another write has occurred on another thread which potentially impacts a path that the upgradable transaction has already read, the upgradable transaction will be restarted so *preceding forms may be evaluated twice*.
+    - If `:throw-on-restart` is true, the transaction will *not restart* and will instead throw an `ExceptionInfo` with data `{:cause :upgrade-restart-required}`.
+    - Body must evaluate to a transaction or an exception will be thrown.
     - See [Example](#upgradable-transaction-example).
 
 **In-Transaction Functions**
@@ -326,27 +326,92 @@ Write transactions block other write transactions (though they do not block read
 (maybe-update-a db "world")
 ;; => 2
 
-(let [tx1
+
+
+(let [_ (println "Conflicting interleaved transactions:")
+      tx1
       (future
         (c/with-upgradable-transaction [db tx]
-          (print "on the first run this will print twice because it is evaluated")
-          (print " before the transaction is upgraded and again after the transaction")
-          (println " is upgraded because the interleaved write causes it to restart")
-          (let [result-tx (c/assoc-at tx [:something] :somewhere)]
-            (println "this will only print once because it occurs after the transaction has upgraded")
-            result-tx))
-
+          (let [read-value (c/get-at tx [:somewhere])]
+            (print "A. this will print twice because the transaction is restarted when it attempts")
+            (print " to upgrade because the interleaved write transaction modified a path, [:something],")
+            (println " that this transaction had already read." )
+            (Thread/sleep 300)
+            (let [result-tx (c/assoc-at tx [:somewhere-else] :something)]
+              (println "C. but this will only print once because it occurs after the transaction has upgraded")
+              result-tx))))
       tx2
-      (future (c/with-upgradable-transaction [db tx]
-       (c/assoc-at tx [:something-else] :somewhere-else)))]
-
+      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                (Thread/sleep 150)
+                (println "B. interleave a write that conflicts with the other transaction's previous read")
+                (c/assoc-at tx [:somewhere] :something-else)))]
   [@tx2
    @tx1])
 
-;; on the first run this will print twice...
-;; on the first run this will print twice...
-;; this will only print once because it occurs after the transaction has upgraded
+;; Conflicting...
+;; A. this will print twice...
+;; B. interleave a write...
+;; A. this will print twice...
+;; C. but this will only print once...
 ;; => [nil nil]
+
+
+(let [_ (println "No conflict:")
+      tx1
+      (future
+        (c/with-upgradable-transaction [db tx]
+          (let [read-value (c/get-at tx [:a-place])]
+            (println "A. this will only print once since there is no conflict.")
+            (Thread/sleep 300)
+            (let [result-tx (c/assoc-at tx [:c-place] :something)]
+              (println "C. and this will also only print once.")
+              result-tx))))
+      tx2
+      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                (Thread/sleep 150)
+                (println "B. interleave an unrelated write")
+                (c/assoc-at tx [:b-place] :something-else)))]
+  [@tx2
+   @tx1])
+
+;; No conflict:
+;; A. this will only print once...
+;; B. interleave a write...
+;; C. and this will also only print once.
+;; => [nil nil]
+
+
+(let [_ (println "Custom conflict handling:")
+      tx1
+      (future
+        (try
+          (c/with-upgradable-transaction [db tx :throw-on-restart true]
+            (c/get-at tx [:a])
+            (Thread/sleep 300)
+            (c/assoc-at tx [:a] :something))
+          (catch clojure.lang.ExceptionInfo e
+            (if (= (:cause (ex-data e)) :upgrade-restart-required)
+              (println "Someone else wrote to [:a]! I'll just give up and do nothing")
+              (throw e)))))
+      tx2
+      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
+                (Thread/sleep 150)
+                (c/assoc-at tx [:a] :something-else)))]
+  [@tx2
+   @tx1])
+
+;; Custom conflict handling:
+;; Someone else wrote to [:a]...
+;; => [nil nil]
+
+
+(let [_ (println "Fetching a result:")]
+  (c/with-upgradable-transaction [db tx :result-path [:my-result]]
+    (c/assoc-at tx [:my-result] 12345)))
+
+;; Fetching a result:
+;; => 12345
+
 
 (c/close-database! db)
 

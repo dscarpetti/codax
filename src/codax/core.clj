@@ -74,10 +74,14 @@
   by default, it does not)."
   ([tx]
    (store/assert-txn tx)
-   (ops/collect tx []))
+   (let [path (prefix-path tx [])
+         tx (store/view-path! tx path)]
+     (ops/collect tx path)))
   ([tx path]
    (store/assert-txn tx)
-   (ops/collect tx (prefix-path tx path))))
+   (let [path (prefix-path tx path)
+         tx (store/view-path! tx path)]
+     (ops/collect tx path))))
 
 (defn assoc-at
   "Associates a path with a value or object, overwriting the current value (and all nested
@@ -90,8 +94,9 @@
   by default, it does not)."
   [tx path val-or-map]
   (store/assert-txn tx)
-  (store/maybe-upgrade-txn tx)
-  (ops/assoc-path tx (prefix-path tx path) val-or-map))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (ops/assoc-path tx path val-or-map)))
 
 (defn update-at
   "Runs a function on the current map or value at the supplied path and `assoc-at`s the result.
@@ -103,15 +108,16 @@
   by default, it does not)."
   [tx path f & args]
   (store/assert-txn tx)
-  (store/maybe-upgrade-txn tx)
-  (apply ops/update-path tx (prefix-path tx path) f args))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (apply ops/update-path tx path f args)))
 
 (defn merge-at
   [tx path m]
   (store/assert-txn tx)
-  (store/maybe-upgrade-txn tx)
-  (apply ops/update-path tx (prefix-path tx path) merge m))
-
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (apply ops/update-path tx path merge m)))
 
 (defn dissoc-at
   "Deletes all values at the supplied path.
@@ -123,8 +129,9 @@
   by default, it does not)."
   [tx path]
   (store/assert-txn tx)
-  (store/maybe-upgrade-txn tx)
-  (ops/delete-path tx (prefix-path tx path)))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (ops/delete-path tx path)))
 
 ;;;;
 
@@ -135,7 +142,9 @@
   by default, it does not)."
   [tx path & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-path tx (prefix-path tx path) limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-path tx path limit reverse)))
 
 (defn seek-prefix
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -147,7 +156,9 @@
   by default, it does not)."
   [tx path val-prefix & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-prefix tx path val-prefix limit reverse)))
 
 (defn seek-prefix-range
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -159,8 +170,9 @@
   by default, it does not)."
   [tx path start-prefix end-prefix & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-prefix-range tx (prefix-path tx path) start-prefix end-prefix limit reverse))
-
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-prefix-range tx path start-prefix end-prefix limit reverse)))
 
 (defn seek-from
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -170,7 +182,9 @@
   by default, it does not)."
   [tx path start-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-from tx path start-val limit reverse)))
 
 (defn seek-to
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -180,7 +194,9 @@
   by default, it does not)."
   [tx path end-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-to tx path end-val limit reverse)))
 
 (defn seek-range
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -190,7 +206,9 @@
   by default, it does not)."
   [tx path start-val end-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-range tx path start-val end-val limit reverse)))
 
 
 ;;;; Transactions
