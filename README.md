@@ -56,6 +56,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
     - If `:throw-on-restart` is true, the transaction will *not restart* and will instead throw an `ExceptionInfo` with data `{:cause :upgrade-restart-required}`.
     - Body must evaluate to a transaction or an exception will be thrown.
     - See [Example](#upgradable-transaction-example).
+    - *Added in 1.4.0*
 
 **In-Transaction Functions**
 
