@@ -315,20 +315,26 @@
     (let [res (atom nil)]
       (is (= "ABAC"
              (with-out-str
-               (let [tx1
+               (let [tx1-read-checkpoint (promise)
+                     tx2-write-checkpoint (promise)
+                     tx1
                      (future
                        (c/with-upgradable-transaction [db tx]
-                         (let [read-value (c/get-at tx [:somewhere])]
-                           (print "A")
-                           (Thread/sleep 300)
-                           (let [result-tx (c/assoc-at tx [:somewhere-else] :something)]
-                             (print "C")
-                             result-tx))))
+                         (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+                         (deliver tx1-read-checkpoint :complete)
+                         (print "A")
+                         (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
+                         (let [result-tx (c/assoc-at tx [:somewhere-else] :something)] ; try to write to [:somewhere]
+                           (print "C")
+                           result-tx)))
                      tx2
-                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                               (Thread/sleep 150)
-                               (print "B")
-                               (c/assoc-at tx [:somewhere] :something-else)))]
+                     (future
+                       (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+                         (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+                         (print "B")
+                         (c/assoc-at tx [:somewhere] :something-else))
+                       (deliver tx2-write-checkpoint :complete)
+                       nil)]
                  (reset! res [@tx2
                               @tx1])))))
       (is (= @res [nil nil])))
@@ -344,21 +350,28 @@
       (is (= "ABC"
              (with-out-str
                (let [
+                     tx1-read-checkpoint (promise)
+                     tx2-write-checkpoint (promise)
                      tx1
                      (future
                        (c/with-upgradable-transaction [db tx]
-                         (let [read-value (c/get-at tx [:a-place])]
-                           (print "A")
-                           (Thread/sleep 300)
-                           (let [result-tx (c/assoc-at tx [:c-place] :something)]
-                             (print "C")
-                             result-tx))))
+                         (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+                         (deliver tx1-read-checkpoint :complete)
+                         (print "A")
+                         (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere-else]
+                         (let [result-tx (c/assoc-at tx [:somewhere] :something)]
+                           (print "C")
+                           result-tx)))
                      tx2
-                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                               (Thread/sleep 150)
-                               (print "B")
-                               (c/assoc-at tx [:b-place] :something-else)))]
-                 (reset! res [@tx2 @tx1])))))
+                     (future
+                       (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+                         (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+                         (print "B")
+                         (c/assoc-at tx [:somewhere-else] :something-else))
+                       (deliver tx2-write-checkpoint :complete)
+                       nil)]
+                 (reset! res [@tx2
+                              @tx1])))))
       (is (= @res [nil nil])))
 
     ;; No Conflict:
@@ -370,26 +383,33 @@
     (let [res (atom nil)]
       (is (= "X"
              (with-out-str
-               (let [tx1
+               (let [tx1-read-checkpoint (promise)
+                     tx2-write-checkpoint (promise)
+                     tx1
                      (future
                        (try
                          (c/with-upgradable-transaction [db tx :throw-on-restart true]
-                           (c/get-at tx [:a])
-                           (Thread/sleep 300)
-                           (c/assoc-at tx [:a] :something))
+                           (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+                           (deliver tx1-read-checkpoint :complete)
+                           (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
+                           (c/assoc-at tx [:somewhere] :something)) ; try to write to [:somewhere]
                          (catch clojure.lang.ExceptionInfo e
                            (if (= (:cause (ex-data e)) :upgrade-restart-required)
                              (print "X")
                              (throw e)))))
                      tx2
-                     (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                               (Thread/sleep 150)
-                               (c/assoc-at tx [:a] :something-else)))]
-                 (reset! res [@tx2 @tx1])))))
+                     (future
+                       (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+                         (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+                         (c/assoc-at tx [:somewhere] :something-else))
+                       (deliver tx2-write-checkpoint :complete)
+                       nil)]
+                 (reset! res [@tx2
+                              @tx1])))))
       (is (= @res [nil nil])))
 
     ;; Custom Conflict Handling:
-    ;; Someone else wrote to [:a]...
+    ;; Someone else wrote to [:somewhere]...
     ;; => [nil nil]
 
 

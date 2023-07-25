@@ -329,28 +329,32 @@ Write transactions block other write transactions (though they do not block read
 ;; => 2
 
 
-
-(let [_ (println "Conflicting interleaved transactions:")
+;; Conflicting Interleaved Transactions
+(let [tx1-read-checkpoint (promise)
+      tx2-write-checkpoint (promise)
       tx1
       (future
         (c/with-upgradable-transaction [db tx]
-          (let [read-value (c/get-at tx [:somewhere])]
-            (print "A. this will print twice because the transaction is restarted when it attempts")
-            (print " to upgrade because the interleaved write transaction modified a path, [:something],")
-            (println " that this transaction had already read." )
-            (Thread/sleep 300)
-            (let [result-tx (c/assoc-at tx [:somewhere-else] :something)]
-              (println "C. but this will only print once because it occurs after the transaction has upgraded")
-              result-tx))))
+          (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+          (deliver tx1-read-checkpoint :complete)
+          (print "A. this will print twice because the transaction is restarted when it attempts")
+          (print " to upgrade because the interleaved write transaction modified a path, [:something],")
+          (println " that this transaction had already read." )
+          (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
+          (let [result-tx (c/assoc-at tx [:somewhere-else] :something)] ; try to write to [:somewhere]
+            (println "C. but this will only print once because it occurs after the transaction has upgraded")
+            result-tx)))
       tx2
-      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                (Thread/sleep 150)
-                (println "B. interleave a write that conflicts with the other transaction's previous read")
-                (c/assoc-at tx [:somewhere] :something-else)))]
+      (future
+        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+          (println "B. interleave a write that conflicts with the other transaction's previous read")
+          (c/assoc-at tx [:somewhere] :something-else))
+        (deliver tx2-write-checkpoint :complete)
+        nil)]
   [@tx2
    @tx1])
 
-;; Conflicting...
 ;; A. this will print twice...
 ;; B. interleave a write...
 ;; A. this will print twice...
@@ -358,52 +362,62 @@ Write transactions block other write transactions (though they do not block read
 ;; => [nil nil]
 
 
-(let [_ (println "No conflict:")
+;; No Conflict
+(let [tx1-read-checkpoint (promise)
+      tx2-write-checkpoint (promise)
       tx1
       (future
         (c/with-upgradable-transaction [db tx]
-          (let [read-value (c/get-at tx [:a-place])]
-            (println "A. this will only print once since there is no conflict.")
-            (Thread/sleep 300)
-            (let [result-tx (c/assoc-at tx [:c-place] :something)]
-              (println "C. and this will also only print once.")
-              result-tx))))
+          (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+          (deliver tx1-read-checkpoint :complete)
+          (println "A. this will only print once since there is no conflict.")
+          (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere-else]
+          (let [result-tx (c/assoc-at tx [:somewhere] :something)]
+            (println "C. and this will also only print once.")
+            result-tx)))
       tx2
-      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                (Thread/sleep 150)
-                (println "B. interleave an unrelated write")
-                (c/assoc-at tx [:b-place] :something-else)))]
+      (future
+        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+          (println "B. interleave an unrelated write")
+          (c/assoc-at tx [:somewhere-else] :something-else))
+        (deliver tx2-write-checkpoint :complete)
+        nil)]
   [@tx2
    @tx1])
 
-;; No conflict:
 ;; A. this will only print once...
 ;; B. interleave a write...
 ;; C. and this will also only print once.
 ;; => [nil nil]
 
 
-(let [_ (println "Custom conflict handling:")
+;; Custom Conflict Handling
+(let [tx1-read-checkpoint (promise)
+      tx2-write-checkpoint (promise)
       tx1
       (future
         (try
           (c/with-upgradable-transaction [db tx :throw-on-restart true]
-            (c/get-at tx [:a])
-            (Thread/sleep 300)
-            (c/assoc-at tx [:a] :something))
+            (c/get-at tx [:somewhere]) ; read value at [:somewhere]
+            (deliver tx1-read-checkpoint :complete)
+            (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
+            (c/assoc-at tx [:somewhere] :something)) ; try to write to [:somewhere]
           (catch clojure.lang.ExceptionInfo e
             (if (= (:cause (ex-data e)) :upgrade-restart-required)
-              (println "Someone else wrote to [:a]! I'll just give up and do nothing")
+              (println "Someone else wrote to [:somewhere]! I'll just give up and do nothing")
               (throw e)))))
       tx2
-      (future (c/with-write-transaction [db tx] ; this could also be an upgradable transaction
-                (Thread/sleep 150)
-                (c/assoc-at tx [:a] :something-else)))]
+      (future
+        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
+          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
+          (c/assoc-at tx [:somewhere] :something-else))
+        (deliver tx2-write-checkpoint :complete)
+        nil)]
   [@tx2
    @tx1])
 
-;; Custom conflict handling:
-;; Someone else wrote to [:a]...
+;; Someone else wrote to [:somewhere]...
 ;; => [nil nil]
 
 
