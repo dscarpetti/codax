@@ -494,24 +494,17 @@
            nil
            watched-paths)))
 
-(defn reset-safe! [a v]
-  (if (nil? v)
-    (assert (not (nil? @a)))
-    (assert (nil? @a)))
-  (reset! a v))
-
 (defn touch-path! [{:keys [upgrade-lock upgrade-viewed-paths] :as tx} path]
   (when (and upgrade-viewed-paths (identical? @upgrade-viewed-paths :transaction-invalidated-by-upgrade))
     (throw-upgrade-invalidated-transaction))
   (let [tx (update tx :touched-paths conj path)]
     (if (and upgrade-lock (not (identical? @upgrade-lock :write)))
       (let [[^ReentrantLock write-lock all-watched-paths] (:write-lock (:db tx))
-            upgrade-watched-paths (:upgrade-watched-paths tx)
-            upgrade-viewed-paths (:upgrade-viewed-paths tx)]
+            upgrade-watched-paths (:upgrade-watched-paths tx)]
         (.unlock (.readLock ^ReentrantReadWriteLock (:compaction-lock (:db tx))))
-        (reset-safe! upgrade-lock nil)
+        (reset! upgrade-lock nil)
         (.lock write-lock)
-        (reset-safe! upgrade-lock :write)
+        (reset! upgrade-lock :write)
         (swap! all-watched-paths disj upgrade-watched-paths)
         (let [safe (upgrade-safe? @upgrade-watched-paths @upgrade-viewed-paths)
               tx (make-transaction (:db tx) (:touched-paths tx))]
