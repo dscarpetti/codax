@@ -4,11 +4,11 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.4 implements [upgradable transactions](#upgradable-transaction-example) (using `with-upgradable-transaction` macro)
+Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro)
 
 Version 1.3.1 is no longer AOT compiled
 
-Version 1.3.0 improves compaction to reduce disk space usage. It also enables custom path type definitions. See [CHANGELOG](https://github.com/dscarpetti/codax/blob/master/CHANGELOG.md) for more details.
+Version 1.3.0 improves compaction to reduce disk space usage. It also enables custom path type definitions. See [CHANGELOG](CHANGELOG.md) for more details.
 
 ### The Why
 
@@ -50,13 +50,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
-  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function (`assoc-at`, `update-at`, `merge-at`, `dissoc-at`).
-    - Evaluates to nil unless a `:result-path` is supplied, in which case it fetches the value at that path at the end of the transaction as if the transaction closed with `(get-at tx <:result-path>)`.
-    - If another write has occurred on another thread which potentially impacts a path that the upgradable transaction has already read, the upgradable transaction will be restarted so *preceding forms may be evaluated twice*.
-    - If `:throw-on-restart` is true, the transaction will *not restart* and will instead throw an `ExceptionInfo` with data `{:cause :upgrade-restart-required}`.
-    - Body must evaluate to a transaction or an exception will be thrown.
-    - See [Example](#upgradable-transaction-example).
-    - *Added in 1.4.0*
+  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function. Details and examples in [upgradable transactions.md](doc/upgradable-transactions.md).
 
 **In-Transaction Functions**
 
@@ -113,7 +107,7 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
   - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
-If you need support for additional types, please review [doc/types.md](https://github.com/dscarpetti/codax/blob/master/doc/types.md).
+If you need support for additional types, please review [doc/types.md](doc/types.md).
 
 ### Conformant Values
 
@@ -294,139 +288,6 @@ Write transactions block other write transactions (though they do not block read
 ;;   :usernames {"chuck" 0, "diane" 1},
 ;;   :users {0 {:id 0, :timestamp 1484529469567, :username "chuck"}}}
 
-
-
-(c/close-database! db)
-
-```
-
-### Upgradable Transaction Example
-
-``` clojure
-
-(defn maybe-update-a
-  "If the value at `[:a]` in `db` is not= `value` then set it to `value`
-  and increment the `:change-counter`.
-
-  Return the final value of `:change-counter`"
-  [db value]
-  (c/with-upgradable-transaction [db tx :result-path [:change-counter]]
-    (if (= value (c/get-at tx [:a]))
-      tx
-      (-> tx
-        (c/update-at [:change-counter] (fn [b] (if b (inc b) 1)))
-        (c/assoc-at [:a] value)))))
-
-(def db (c/open-database! "data/demo-database"))
-
-(maybe-update-a db "hello")
-;; => 1
-
-(maybe-update-a db "hello")
-;; => 1
-
-(maybe-update-a db "world")
-;; => 2
-
-
-;; Conflicting Interleaved Transactions
-(let [tx1-read-checkpoint (promise)
-      tx2-write-checkpoint (promise)
-      tx1
-      (future
-        (c/with-upgradable-transaction [db tx]
-          (c/get-at tx [:somewhere]) ; read value at [:somewhere]
-          (deliver tx1-read-checkpoint :complete)
-          (print "A. this will print twice because the transaction is restarted when it attempts")
-          (print " to upgrade because the interleaved write transaction modified a path, [:something],")
-          (println " that this transaction had already read." )
-          (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
-          (let [result-tx (c/assoc-at tx [:somewhere-else] :something)] ; try to write to [:somewhere]
-            (println "C. but this will only print once because it occurs after the transaction has upgraded")
-            result-tx)))
-      tx2
-      (future
-        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
-          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
-          (println "B. interleave a write that conflicts with the other transaction's previous read")
-          (c/assoc-at tx [:somewhere] :something-else))
-        (deliver tx2-write-checkpoint :complete)
-        nil)]
-  [@tx2
-   @tx1])
-
-;; A. this will print twice...
-;; B. interleave a write...
-;; A. this will print twice...
-;; C. but this will only print once...
-;; => [nil nil]
-
-
-;; No Conflict
-(let [tx1-read-checkpoint (promise)
-      tx2-write-checkpoint (promise)
-      tx1
-      (future
-        (c/with-upgradable-transaction [db tx]
-          (c/get-at tx [:somewhere]) ; read value at [:somewhere]
-          (deliver tx1-read-checkpoint :complete)
-          (println "A. this will only print once since there is no conflict.")
-          (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere-else]
-          (let [result-tx (c/assoc-at tx [:somewhere] :something)]
-            (println "C. and this will also only print once.")
-            result-tx)))
-      tx2
-      (future
-        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
-          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
-          (println "B. interleave an unrelated write")
-          (c/assoc-at tx [:somewhere-else] :something-else))
-        (deliver tx2-write-checkpoint :complete)
-        nil)]
-  [@tx2
-   @tx1])
-
-;; A. this will only print once...
-;; B. interleave a write...
-;; C. and this will also only print once.
-;; => [nil nil]
-
-
-;; Custom Conflict Handling
-(let [tx1-read-checkpoint (promise)
-      tx2-write-checkpoint (promise)
-      tx1
-      (future
-        (try
-          (c/with-upgradable-transaction [db tx :throw-on-restart true]
-            (c/get-at tx [:somewhere]) ; read value at [:somewhere]
-            (deliver tx1-read-checkpoint :complete)
-            (deref tx2-write-checkpoint) ; wait for tx2 to write to [:somewhere]
-            (c/assoc-at tx [:somewhere] :something)) ; try to write to [:somewhere]
-          (catch clojure.lang.ExceptionInfo e
-            (if (= (:cause (ex-data e)) :upgrade-restart-required)
-              (println "Someone else wrote to [:somewhere]! I'll just give up and do nothing")
-              (throw e)))))
-      tx2
-      (future
-        (c/with-write-transaction [db tx] ; (this could also be an upgradable transaction)
-          (deref tx1-read-checkpoint) ; wait for tx1 to read from [:somewhere]
-          (c/assoc-at tx [:somewhere] :something-else))
-        (deliver tx2-write-checkpoint :complete)
-        nil)]
-  [@tx2
-   @tx1])
-
-;; Someone else wrote to [:somewhere]...
-;; => [nil nil]
-
-
-(let [_ (println "Fetching a result:")]
-  (c/with-upgradable-transaction [db tx :result-path [:my-result]]
-    (c/assoc-at tx [:my-result] 12345)))
-
-;; Fetching a result:
-;; => 12345
 
 
 (c/close-database! db)

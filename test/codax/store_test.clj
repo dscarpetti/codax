@@ -135,7 +135,7 @@
         deletions (shuffle keys)
         txn (loop [current-elements (list)
                    remaining-insertions insertions
-                   txn (make-transaction db)]
+                   txn (make-transaction db [])]
               (is (=
                    current-elements
                    (doall (map (partial b+get txn) current-elements))))

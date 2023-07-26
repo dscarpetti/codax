@@ -238,29 +238,76 @@
   The `body` must evaluate to this object so it can potentially be committed.
 
   The transaction begins as a read transaction. If a modifying function is
-  encountered the transaction is restarted as a write transaction. (Modifying
-  functions are `assoc-at`, `update-at`, `merge-at`, `dissoc-at`)
+  encountered the transaction may be restarted as a write transaction depending
+  on if a previously read path has potentially been changed by a write in
+  another transaction (Modifying functions include `assoc-at`, `update-at`,
+  `merge-at`, & `dissoc-at`)
 
   Evaluates to nil unless a `:result-path` is supplied in which case it
   evaluates to the result of calling `(get-at tx <:result-path>)` at the
   end of the transaction.
 
   If another write transaction is initiated between the start of the transaction
-  and an upgrade the body will be re-evaluated unless `:throw-on-restart` is
+  and an upgrade the body may be re-evaluated unless `:throw-on-upgrade` is
   true, in which case a an ExceptionInfo is thrown with the data:
-  `{:cause :upgrade-restart-required}`"
-  [[database tx-symbol & {:keys [prefix result-path throw-on-restart]}] & body]
+  `{:codax/upgraded-transaction <tx>}` NOTE: if you catch this error within the
+  upgradable transaction you MUST use the <tx> object provided in the ex-data."
+  [[database tx-symbol & {:keys [prefix result-path throw-on-upgrade] :as options}] & body]
+  (assert (zero? (count (dissoc options :prefix :result-path :throw-on-upgrade))) (str "Unrecognized with-upgradable-transaction options: " (set (keys (dissoc options :prefix :result-path :throw-on-upgrade)))))
   (if (nil? result-path)
-    `(store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-restart]
+    `(store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-upgrade]
        (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
          ~@body))
     `(let [res# (atom nil)]
-       (store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-restart]
+       (store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-upgrade]
          (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)
                tx-res# (do ~@body)]
            (reset! res# (get-at tx-res# ~result-path))
            tx-res#))
        @res#)))
+
+(defmacro try-upgrade
+  "Macro to simplify catching upgrading transactions when using the
+  `with-upgradable-transaction` macro. If an upgrading transaction
+  exception is caught the symbol in the catch clause is set to the
+  upgraded transaction. All other exceptions are re-thrown.
+
+  (try-upgrade
+    <expression-that-might-trigger-upgrade>
+    (catch <upgraded-tx-symbol>
+      <forms>)
+    (finally <cleanup-forms>)) ; finally clause is optional
+
+  Example:
+
+  (with-upgradable-transaction [db tx]
+    ...
+    (try-upgrade
+      (assoc-at tx [:foo] 'bar)
+      (catch upgraded-tx ; something must have changed
+        (assoc-at upgraded-tx [:foo] 'baz))
+      (finally
+        (my-cleanup-function))))"
+  ([expr catch-clause]
+   `(try-upgrade ~expr ~catch-clause (finally)))
+  ([expr catch-clause finally-clause]
+   (assert (and (list? catch-clause)
+                (= (first catch-clause) 'catch)
+                (symbol? (second catch-clause))
+                (not (empty? (rest catch-clause))))
+           "catch clause must be in the form (catch upgraded-tx-symbol form & forms)")
+   (assert (and (list? finally-clause)
+                (= (first finally-clause) 'finally))
+           "finally clause must be in the form (finally & forms)")
+   `(try
+      ~expr
+      (catch clojure.lang.ExceptionInfo e#
+        (if-let [~(second catch-clause) (:codax/upgraded-transaction (ex-data e#))]
+          (do
+            ~@(nthrest catch-clause 2))
+          (throw e#)))
+      (finally
+        ~@(rest finally-clause)))))
 
 ;;;; Direct Database Convenience Functions
 
