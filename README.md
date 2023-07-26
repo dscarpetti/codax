@@ -6,10 +6,6 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro)
 
-Version 1.3.1 is no longer AOT compiled
-
-Version 1.3.0 improves compaction to reduce disk space usage. It also enables custom path type definitions. See [CHANGELOG](CHANGELOG.md) for more details.
-
 ### The Why
 
 Even simple programs frequently benefit from saving data to disk. Unfortunately, there is generally a large semantic leap once you go from values in memory to values on disk. Codax aims to close that semantic gap. While it won't win any speed contests, it is designed to be performant enough for applications serving thousands of users. Most importantly, it is designed to make data persistance as low friction as possible. It is also designed to be effortless to get started with. There are no external libraries to install, and the underlying B+ tree is written directly in clojure.
@@ -28,7 +24,7 @@ Codax provides the following guarantees:
 
 ### Production Ready?
 
-I have successfully used this library in production environments. That said, there are probably a few rough edges that could use smoothing.
+This library has been, and continues to be, successfully used in production environments. That said, there are probably a few rough edges that could use smoothing.
 
 ## Usage
 
@@ -50,7 +46,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
-  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function. Details and examples in [upgradable transactions.md](doc/upgradable-transactions.md).
+  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function. Details and examples in [upgradable transactions.md](doc/upgradable-transactions.md). _added in 1.4.0_
 
 **In-Transaction Functions**
 

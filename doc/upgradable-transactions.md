@@ -2,10 +2,10 @@
 
 ## with-upgradable-transaction
 
-Upgradable transactions begin as read transaction but upgrade into write transaction when a function is called that would modify the database. If possible, this upgrade is performed seamlessly. However, if prior to upgrading the transaction reads from a `path` that has since been (potentially) modified by another concurrent transaction, the `body` of the transaction will be restarted from the beginning (as a write transaction). This behavior can be overridden by setting the `:throw-on-upgrade` option (details below).
+Upgradable transactions begin as read transaction but upgrade into write transaction when a function is called that would modify the database. If possible, this upgrade is performed seamlessly. However, if, prior to upgrading, the transaction reads from a `path` that has since been (potentially) modified by another concurrent transaction, the `body` of the transaction will be restarted from the beginning (as a write transaction). This behavior can be overridden by setting the `:throw-on-upgrade` option (details below).
 
 To create an upgradable transaction you use the `with-upgradable-transaction` macro which has the form `([[database tx-symbol & {:keys [prefix result-path throw-on-upgrade]}] & body])`. This is similar to the `with-read-transaction` & `with-write-transaction` macros with two additional optional keyword arguments:
-  - `:result-path` - if this option is supplied the transaction will return the result of calling `(get-at tx <:result-path>)` after the `body` is executed (but within the scope of the transaction. If this option is not supplied, `with-upgradable-transaction` evaluates to `nil`
+  - `:result-path` - if this option is supplied the transaction will return the result of calling `(get-at tx <:result-path>)` after the `body` is executed (but still within the scope of the transaction.) If this option is not supplied, `with-upgradable-transaction` evaluates to `nil`
   - `:throw-on-upgrade` - if this option is truthy the transaction will not be automatically restarted if a conflict is detected. Instead an `clojure.lang.ExceptionInfo` will be thrown that contains the ex-data: `{:codax/upgraded-transaction <tx>}`.
     - If you intend to catch the exception it is recommended that you do so outside the scope of the transaction and initiate a new transaction.
     - If you do catch the exception *within* the upgradable transaction you **must continue with or return the upgraded transaction** supplied in the `ex-data` of the ExceptionInfo at the `:codax/upgraded-transaction` key. For example: `(let [upgraded-tx (:codax/upgraded-transaction (ex-data e)] (-> upgraded-tx ...)`.
@@ -263,7 +263,7 @@ _Correct:_
 
 ## try-upgrade
 
-The `try-upgrade` macro simplifies the basic case of handling upgrades manually within an upgradable transaction using the `:throw-on-upgrade` option. *It should only be used within the body of a `with-upgradable-transaction` form. It is a simple helper to reduce boilerplate and hopefully increase code clarity. It only catches upgrade exceptions, all other exceptions are rethrown.
+The `try-upgrade` macro simplifies the basic case of handling upgrades manually within an upgradable transaction using the `:throw-on-upgrade` option. It should only be used within the body of a `with-upgradable-transaction` form. It is a simple helper to reduce boilerplate and hopefully increase code clarity. It only catches upgrade exceptions, all other exceptions are rethrown.
 
 It lets this:
 
