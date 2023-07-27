@@ -9,6 +9,7 @@ To create an upgradable transaction you use the `with-upgradable-transaction` ma
   - `:throw-on-upgrade` - if this option is truthy the transaction will not be automatically restarted if a conflict is detected. Instead an `clojure.lang.ExceptionInfo` will be thrown that contains the ex-data: `{:codax/upgraded-transaction <tx>}`.
     - If you intend to catch the exception it is recommended that you do so outside the scope of the transaction and initiate a new transaction.
     - If you do catch the exception *within* the upgradable transaction you **must continue with or return the upgraded transaction** supplied in the `ex-data` of the ExceptionInfo at the `:codax/upgraded-transaction` key. For example: `(let [upgraded-tx (:codax/upgraded-transaction (ex-data e)] (-> upgraded-tx ...)`.
+      - If you are *not* within the same upgradable transaction **do not attempt to use the upgraded-tx inside another transaction** it's an error the library cannot catch and the consequences are undefined, but probably not great.
 
 Modification functions that will trigger an upgrade from a read to a write transaction include:
   - `assoc-at`
