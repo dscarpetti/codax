@@ -8,8 +8,8 @@ To create an upgradable transaction you use the `with-upgradable-transaction` ma
   - `:result-path` - if this option is supplied the transaction will return the result of calling `(get-at tx <:result-path>)` after the `body` is executed (but still within the scope of the transaction.) If this option is not supplied, `with-upgradable-transaction` evaluates to `nil`
   - `:throw-on-upgrade` - if this option is truthy the transaction will not be automatically restarted if a conflict is detected. Instead an `clojure.lang.ExceptionInfo` will be thrown that contains the ex-data: `{:codax/upgraded-transaction <tx>}`.
     - If you intend to catch the exception it is recommended that you do so outside the scope of the transaction and initiate a new transaction.
-    - If you do catch the exception *within* the upgradable transaction you **must continue with or return the upgraded transaction** supplied in the `ex-data` of the ExceptionInfo at the `:codax/upgraded-transaction` key. For example: `(let [upgraded-tx (:codax/upgraded-transaction (ex-data e)] (-> upgraded-tx ...)`.
-      - Note: If you are *not* within the same upgradable transaction **do not attempt to use the upgraded-tx inside another transaction** it's an error the library cannot catch and the consequences are undefined, but probably not great. (Actually it's rather worse than that, since it is probably fine most of the time and very occasionally catastrophically bad.) Anyway, if you don't want to worry about it you can ignore all this and always catch upgrade exceptions outside of the `with-upgradable-transaction` block.
+    - **Experimental** If you do catch the exception *within* the upgradable transaction you **must continue with or return the upgraded transaction** supplied in the `ex-data` of the ExceptionInfo at the `:codax/upgraded-transaction` key. For example: `(let [upgraded-tx (:codax/upgraded-transaction (ex-data e)] (-> upgraded-tx ...)`.
+      - Note: If you are *not* within the same upgradable transaction **do not attempt to use the upgraded-tx inside another transaction** it's an error the library cannot catch and the consequences are undefined, but probably not great. (Actually it's rather worse than that, since it is probably fine most of the time and very occasionally catastrophically bad.) Anyway, if you don't want to worry about it you can ignore all this and *always catch upgrade exceptions outside of the `with-upgradable-transaction` block*.
 
 Modification functions that will trigger an upgrade from a read to a write transaction include:
   - `assoc-at`
@@ -174,7 +174,7 @@ Modification functions that will trigger an upgrade from a read to a write trans
 (c/destroy-database! db)
 ```
 
-### Advanced Custom Conflict Handling
+### Advanced Custom Conflict Handling (Experimental)
 
 We can catch the exception within the transaction block but we must be sure to use the upgraded transaction supplied in the ex-data of the exception.
 
