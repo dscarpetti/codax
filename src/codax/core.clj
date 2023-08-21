@@ -250,11 +250,10 @@
   If another write transaction is initiated between the start of the transaction
   and an upgrade the body may be re-evaluated unless `:throw-on-upgrade` is
   true, in which case a an ExceptionInfo is thrown with the data:
-  `{:codax/upgraded-transaction <tx>}`
-
-  NOTE: if you catch this error within the upgradable transaction you MUST use
-  the <tx> object provided in the ex-data. This is not generally recommended and
-  should be regarded as experimental."
+  `{:codax/upgraded-transaction <tx>}`"
+  ;; NOTE: if you catch this error within the upgradable transaction you MUST use
+  ;; the <tx> object provided in the ex-data. This is not generally recommended and
+  ;; should be regarded as experimental."
   [[database tx-symbol & {:keys [prefix result-path throw-on-upgrade] :as options}] & body]
   (assert (zero? (count (dissoc options :prefix :result-path :throw-on-upgrade))) (str "Unrecognized with-upgradable-transaction options: " (set (keys (dissoc options :prefix :result-path :throw-on-upgrade)))))
   (if (nil? result-path)
@@ -269,7 +268,7 @@
            tx-res#))
        @res#)))
 
-(defmacro try-upgrade
+#_(defmacro try-upgrade
   "Macro to simplify catching upgrading transactions when using the
   `with-upgradable-transaction` macro. If an upgrading transaction
   exception is caught the symbol in the catch clause is set to the
