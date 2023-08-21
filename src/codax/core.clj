@@ -268,8 +268,10 @@
            tx-res#))
        @res#)))
 
-#_(defmacro try-upgrade
-  "Macro to simplify catching upgrading transactions when using the
+(defmacro try-upgrade
+  "Relies on Unsupported Behavior. Used for tests.
+
+  Macro to simplify catching upgrading transactions when using the
   `with-upgradable-transaction` macro. If an upgrading transaction
   exception is caught the symbol in the catch clause is set to the
   upgraded transaction. All other exceptions are re-thrown.
@@ -290,6 +292,7 @@
         (assoc-at upgraded-tx [:foo] 'baz))
       (finally
         (my-cleanup-function))))"
+  {:deprecated "1.4.0"}
   ([expr catch-clause]
    `(try-upgrade ~expr ~catch-clause (finally)))
   ([expr catch-clause finally-clause]
