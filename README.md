@@ -367,9 +367,6 @@ Write transactions block other write transactions (though they do not block read
 ```clojure
 (def db (c/open-database! "data/example-database")) ;
 
-(defn to-instant [s]
-  (java.time.Instant/ofEpochMilli (java.util.Date/parse s)))
-
 (defn post-message!
   ([user body]
    (post-message! (java.time.Instant/now) user body))
@@ -384,15 +381,15 @@ Write transactions block other write transactions (though they do not block read
 
 (defn get-messages-before [ts]
   (process-messages
-   (c/seek-to! db [:messages] ts)))
+   (c/seek-to! db [:messages] (.toInstant ts))))
 
 (defn get-messages-after [ts]
   (process-messages
-   (c/seek-from! db [:messages] ts)))
+   (c/seek-from! db [:messages] (.toInstant ts))))
 
 (defn get-messages-between [start-ts end-ts]
   (process-messages
-   (c/seek-range! db [:messages] start-ts end-ts)))
+   (c/seek-range! db [:messages] (.toInstant start-ts) (.toInstant end-ts))))
 
 (defn get-recent-messages [n]
   (-> (c/seek-at! db [:messages] :limit n :reverse true)
@@ -403,46 +400,46 @@ Write transactions block other write transactions (though they do not block read
 
 
 
-(defn simulate-message! [date-time-string user body]
-  (post-message! (to-instant date-time-string) user body))
+(defn simulate-message! [date-time user body]
+  (post-message! (.toInstant date-time) user body))
 
-(simulate-message! "June 6, 2020 11:01" "Bobby" "Hello")
-(simulate-message! "June 6, 2020 11:02" "Alice" "Welcome, Bobby")
-(simulate-message! "June 6, 2020 11:03" "Bobby" "I was wondering how codax seeking works?")
-(simulate-message! "June 6, 2020 11:07" "Alice" "Please be more specific, have you read the docs/examples?")
-(simulate-message! "June 6, 2020 11:08" "Bobby" "Oh, I guess I should do that.")
+(simulate-message! #inst "2020-06-06T11:01" "Bobby" "Hello")
+(simulate-message! #inst "2020-06-06T11:02" "Alice" "Welcome, Bobby")
+(simulate-message! #inst "2020-06-06T11:03" "Bobby" "I was wondering how codax seeking works?")
+(simulate-message! #inst "2020-06-06T11:07" "Alice" "Please be more specific, have you read the docs/examples?")
+(simulate-message! #inst "2020-06-06T11:08" "Bobby" "Oh, I guess I should do that.")
 
-(simulate-message! "June 7, 2020 14:30" "Chuck" "Anybody here?")
-(simulate-message! "June 7, 2020 14:35" "Chuck" "Guess not...")
+(simulate-message! #inst "2020-06-07T14:30" "Chuck" "Anybody here?")
+(simulate-message! #inst "2020-06-07T14:35" "Chuck" "Guess not...")
 
-(simulate-message! "June 8, 2020 16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
-(simulate-message! "June 8, 2020 16:55" "Alice" "Basically, it seeks from the end and works backwards")
-(simulate-message! "June 8, 2020 16:56" "Bobby" "Why would I do that?")
-(simulate-message! "June 8, 2020 16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
+(simulate-message! #inst "2020-06-08T16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
+(simulate-message! #inst "2020-06-08T16:55" "Alice" "Basically, it seeks from the end and works backwards")
+(simulate-message! #inst "2020-06-08T16:56" "Bobby" "Why would I do that?")
+(simulate-message! #inst "2020-06-08T16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
 
 
 (get-recent-messages 3)
-;;({:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
-;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
-;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+;;({:user "Alice" :time "2020-06-08T16:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T16:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T16:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
 
-(get-messages-after (to-instant "June 7, 2020 14:32"))
-;;({:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."}
-;; {:user "Bobby" :time "2020-06-08T22:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
-;; {:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
-;; {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
-;; {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
+(get-messages-after #inst "2020-06-07T14:32")
+;;({:user "Chuck" :time "2020-06-07T14:35:00Z" :body "Guess not..."}
+;; {:user "Bobby" :time "2020-06-08T16:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
+;; {:user "Alice" :time "2020-06-08T16:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+;; {:user "Bobby" :time "2020-06-08T16:56:00Z" :body "Why would I do that?"}
+;; {:user "Alice" :time "2020-06-08T16:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })
 
-(get-messages-before (to-instant "June 6, 2020 11:05"))
-;;({:user "Bobby" :time "2020-06-06T17:01:00Z" :body "Hello"}
-;; {:user "Alice" :time "2020-06-06T17:02:00Z" :body "Welcome, Bobby"}
-;; {:user "Bobby" :time "2020-06-06T17:03:00Z" :body "I was wondering how codax seeking works?"})
+(get-messages-before #inst "2020-06-06T11:05")
+;;({:user "Bobby" :time "2020-06-06T11:01:00Z" :body "Hello"}
+;; {:user "Alice" :time "2020-06-06T11:02:00Z" :body "Welcome, Bobby"}
+;; {:user "Bobby" :time "2020-06-06T11:03:00Z" :body "I was wondering how codax seeking works?"})
 
 
-(get-messages-between (to-instant "June 7, 2020")
-                      (to-instant "June 7, 2020 23:59"))
-;;({:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
-;; {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})
+(get-messages-between #inst "2020-06-07"
+                      #inst "2020-06-07T23:59")
+;;({:user "Chuck" :time "2020-06-07T14:30:00Z" :body "Anybody here?"}
+;; {:user "Chuck" :time "2020-06-07T14:35:00Z" :body "Guess not..."})
 
 (c/close-database! db)
 
