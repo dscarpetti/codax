@@ -213,9 +213,7 @@
 
 
 (defn messaging-example-body [db]
-  (let [to-instant (fn [s]
-                     (java.time.Instant/ofEpochMilli (java.util.Date/parse s)))
-        post-message! nil
+  (let [post-message! nil
         post-message! (fn
                         ([user body]
                          (post-message! (java.time.Instant/now) user body))
@@ -230,15 +228,15 @@
 
         get-messages-before (fn [ts]
                               (process-messages
-                               (c/seek-to! db [:messages] ts)))
+                               (c/seek-to! db [:messages] (.toInstant ts))))
 
         get-messages-after (fn [ts]
                              (process-messages
-                              (c/seek-from! db [:messages] ts)))
+                              (c/seek-from! db [:messages] (.toInstant ts))))
 
         get-messages-between (fn [start-ts end-ts]
                                (process-messages
-                                (c/seek-range! db [:messages] start-ts end-ts)))
+                                (c/seek-range! db [:messages] (.toInstant start-ts) (.toInstant end-ts))))
 
         get-recent-messages (fn [n]
                               (-> (c/seek-at! db [:messages] :limit n :reverse true)
@@ -247,54 +245,54 @@
 
 
 
-        simulate-message! (fn [date-time-string user body]
-                            (post-message! (to-instant date-time-string) user body))]
+        simulate-message! (fn [date-time user body]
+                            (post-message! (.toInstant date-time) user body))]
 
-    (simulate-message! "June 6, 2020 11:01" "Bobby" "Hello")
-    (simulate-message! "June 6, 2020 11:02" "Alice" "Welcome, Bobby")
-    (simulate-message! "June 6, 2020 11:03" "Bobby" "I was wondering how codax seeking works?")
-    (simulate-message! "June 6, 2020 11:07" "Alice" "Please be more specific, have you read the docs/examples?")
-    (simulate-message! "June 6, 2020 11:08" "Bobby" "Oh, I guess I should do that.")
+    (simulate-message! #inst "2020-06-06T11:01" "Bobby" "Hello")
+    (simulate-message! #inst "2020-06-06T11:02" "Alice" "Welcome, Bobby")
+    (simulate-message! #inst "2020-06-06T11:03" "Bobby" "I was wondering how codax seeking works?")
+    (simulate-message! #inst "2020-06-06T11:07" "Alice" "Please be more specific, have you read the docs/examples?")
+    (simulate-message! #inst "2020-06-06T11:08" "Bobby" "Oh, I guess I should do that.")
 
-    (simulate-message! "June 7, 2020 14:30" "Chuck" "Anybody here?")
-    (simulate-message! "June 7, 2020 14:35" "Chuck" "Guess not...")
+    (simulate-message! #inst "2020-06-07T14:30" "Chuck" "Anybody here?")
+    (simulate-message! #inst "2020-06-07T14:35" "Chuck" "Guess not...")
 
-    (simulate-message! "June 8, 2020 16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
-    (simulate-message! "June 8, 2020 16:55" "Alice" "Basically, it seeks from the end and works backwards")
-    (simulate-message! "June 8, 2020 16:56" "Bobby" "Why would I do that?")
-    (simulate-message! "June 8, 2020 16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
+    (simulate-message! #inst "2020-06-08T16:50" "Bobby" "Okay, so I read the docs. What is the :reverse param for?")
+    (simulate-message! #inst "2020-06-08T16:55" "Alice" "Basically, it seeks from the end and works backwards")
+    (simulate-message! #inst "2020-06-08T16:56" "Bobby" "Why would I do that?")
+    (simulate-message! #inst "2020-06-08T16:57" "Alice" "Well, generally it is used to grab just the end of a long dataset.")
 
 
     (is (=
          (get-recent-messages 3)
          (list
-          {:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
-          {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
-          {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })))
+          {:user "Alice" :time "2020-06-08T16:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+          {:user "Bobby" :time "2020-06-08T16:56:00Z" :body "Why would I do that?"}
+          {:user "Alice" :time "2020-06-08T16:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })))
 
     (is (=
-         (get-messages-after (to-instant "June 7, 2020 14:32"))
+         (get-messages-after #inst "2020-06-07T14:32")
          (list
-          {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."}
-          {:user "Bobby" :time "2020-06-08T22:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
-          {:user "Alice" :time "2020-06-08T22:55:00Z" :body "Basically, it seeks from the end and works backwards"}
-          {:user "Bobby" :time "2020-06-08T22:56:00Z" :body "Why would I do that?"}
-          {:user "Alice" :time "2020-06-08T22:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })))
+          {:user "Chuck" :time "2020-06-07T14:35:00Z" :body "Guess not..."}
+          {:user "Bobby" :time "2020-06-08T16:50:00Z" :body "Okay, so I read the docs. What is the :reverse param for?"}
+          {:user "Alice" :time "2020-06-08T16:55:00Z" :body "Basically, it seeks from the end and works backwards"}
+          {:user "Bobby" :time "2020-06-08T16:56:00Z" :body "Why would I do that?"}
+          {:user "Alice" :time "2020-06-08T16:57:00Z" :body "Well, generally it is used to grab just the end of a long dataset." })))
 
     (is (=
-         (get-messages-before (to-instant "June 6, 2020 11:05"))
+         (get-messages-before #inst "2020-06-06T11:05")
          (list
-          {:user "Bobby" :time "2020-06-06T17:01:00Z" :body "Hello"}
-          {:user "Alice" :time "2020-06-06T17:02:00Z" :body "Welcome, Bobby"}
-          {:user "Bobby" :time "2020-06-06T17:03:00Z" :body "I was wondering how codax seeking works?"})))
+          {:user "Bobby" :time "2020-06-06T11:01:00Z" :body "Hello"}
+          {:user "Alice" :time "2020-06-06T11:02:00Z" :body "Welcome, Bobby"}
+          {:user "Bobby" :time "2020-06-06T11:03:00Z" :body "I was wondering how codax seeking works?"})))
 
 
     (is (=
-         (get-messages-between (to-instant "June 7, 2020")
-                               (to-instant "June 7, 2020 23:59"))
+         (get-messages-between #inst "2020-06-07"
+                               #inst "2020-06-07T23:59")
          (list
-          {:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
-          {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})))))
+          {:user "Chuck" :time "2020-06-07T14:30:00Z" :body "Anybody here?"}
+          {:user "Chuck" :time "2020-06-07T14:35:00Z" :body "Guess not..."})))))
 
 
 
