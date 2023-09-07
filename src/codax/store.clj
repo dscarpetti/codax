@@ -10,7 +10,7 @@
    [java.nio ByteBuffer]
    [java.nio.channels FileChannel]
    [java.nio.file Files Paths StandardCopyOption StandardOpenOption]
-   [java.util.concurrent.locks ReentrantReadWriteLock]))
+   [java.util.concurrent.locks ReentrantReadWriteLock ReentrantLock]))
 
 ;;;;; Settings
 
@@ -127,6 +127,13 @@
        (do ~@body)
        (finally (.unlock (.writeLock lock#))))))
 
+(defmacro with-write-lock [[database] & body]
+  `(let [[^ReentrantLock lock#] (:write-lock ~database)]
+     (.lock lock#)
+     (try
+       (do ~@body)
+       (finally (.unlock lock#)))))
+
 ;;; Compaction
 
 (defn- compact-manifest [path manifest root-id]
@@ -216,7 +223,7 @@
                                                   :writes-since-compaction writes-since-compaction})))))
 
 (defn compact-database [db]
-  (locking (:write-lock db)
+  (with-write-lock [db]
     (let [start-compaction-time (System/nanoTime)
           path (:path db)
           {:keys [manifest root-id is-closed writes-since-compaction ^FileChannel manifest-channel ^FileChannel nodes-channel]} @(:data db)
@@ -245,7 +252,7 @@
                   path-or-db
                   (:path path-or-db)))]
       (when-let [open-db (@open-databases path)]
-        (locking (:write-lock open-db)
+        (with-write-lock [open-db]
           (with-compaction-lock [open-db]
             (when (not (:is-closed @(:data open-db)))
               (close-file-handles open-db)
@@ -297,7 +304,7 @@
         db {:codax.store/is-database true
             :path path
             :backup-fn backup-fn
-            :write-lock (Object.)
+            :write-lock [(ReentrantLock. true) (atom #{})]
             :compaction-lock (ReentrantReadWriteLock. true)
             :metrics (atom {:opened-at (System/nanoTime)
                             :compactions 0})
@@ -396,7 +403,7 @@
   nil)
 
 
-(defn make-transaction [database]
+(defn make-transaction [database touched-paths]
   (let [{:keys [manifest root-id id-counter nodes-offset is-closed]} @(:data database)]
     (when is-closed (throw (ex-info "Database Closed" {:cause :attempted-transaction
                                                        :message "The database object has been invalidated."
@@ -407,6 +414,7 @@
      :id-counter id-counter
      :nodes-offset nodes-offset
      :manifest manifest
+     :touched-paths touched-paths
      :dirty-nodes {}}))
 
 ;;; Macros
@@ -419,23 +427,132 @@
 (defn assert-txn [txn & [msg]]
   (when (not (and (map? txn) (:codax.store/is-transaction txn)))
     (throw (ex-info "Invalid Transaction" {:cause :invalid-transaction
-                                           :message (or msg "expected a transaction")}))))
+                                           :message (or msg "expected a transaction")
+                                           :got txn}))))
+
+(defn update-touched-paths! [tx all-watched-paths]
+  (let [touched-paths (:touched-paths tx)]
+    (doseq [watched-path-set @all-watched-paths]
+      (swap! watched-path-set into touched-paths))))
 
 (defmacro with-write-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
      (assert-db db#)
-     (locking (:write-lock db#)
-       (let [~tx-symbol (make-transaction db#)
+     (with-write-lock [db#]
+       (let [~tx-symbol (make-transaction db# [])
              result-tx# (do ~@body)]
          (assert-txn result-tx#  "the body of `with-write-transaction` must evaluate to a transaction")
-         (commit! result-tx#)))))
+         (commit! result-tx#)
+         (update-touched-paths! result-tx# ((:write-lock db#) 1))))
+     nil))
 
 (defmacro with-read-transaction [[database tx-symbol] & body]
   `(let [db# ~database]
      (assert-db db#)
      (with-read-lock [db#]
-       (let [~tx-symbol (make-transaction db#)]
+       (let [~tx-symbol (make-transaction db# [])]
          ~@body))))
+
+(defn throw-upgrade-restart [tx]
+  (throw (ex-info "Upgrading Transaction" {:cause :upgrade-required
+                                           :message "transaction upgrading from read to write."
+                                           :codax/upgraded-transaction tx})))
+
+(defn throw-upgrade-invalidated-transaction []
+  (throw (ex-info "Transaction Invalidated By Upgrade" {:cause :transaction-invalidated-by-upgrade
+                                                        :message "Once a transaction is upgraded the previous tx object is invalid. If an exception was caught because the `:throw-on-error` option the upgraded tx can be found in the ex-data of ExceptionInfo at the `:codax/upgraded-transaction` key. For example: `(let [tx (:codax/upgraded-transaction (ex-data e)] ...)`"})))
+
+(defn conj-viewed-path [upgrade-viewed-paths path]
+  (if (identical? upgrade-viewed-paths :transaction-invalidated-by-upgrade)
+    (throw-upgrade-invalidated-transaction)
+    (conj upgrade-viewed-paths path)))
+
+(defn view-path! [{:keys [upgrade-viewed-paths] :as tx} path]
+  (when upgrade-viewed-paths
+    (swap! upgrade-viewed-paths conj-viewed-path path))
+  tx)
+
+(defn- mutual-prefix? [a b]
+  (let [end (min (count a) (count b))]
+    (loop [i 0]
+      (cond
+        (= i end) true
+        (not= (a i) (b i)) false
+        :else (recur (inc i))))))
+
+(defn- upgrade-safe? [watched-paths viewed-paths]
+  (not
+   (reduce (fn [_ watched]
+             (let [x (reduce (fn [_ viewed]
+                               (assert (= (mutual-prefix? watched viewed)
+                                          (mutual-prefix? viewed watched)))
+                               (when (mutual-prefix? watched viewed)
+                                 (reduced true)))
+                             nil
+                             viewed-paths)]
+               (when x (reduced true))))
+           nil
+           watched-paths)))
+
+(defn touch-path! [{:keys [upgrade-lock upgrade-viewed-paths] :as tx} path]
+  (when (and upgrade-viewed-paths (identical? @upgrade-viewed-paths :transaction-invalidated-by-upgrade))
+    (throw-upgrade-invalidated-transaction))
+  (let [tx (update tx :touched-paths conj path)]
+    (if (and upgrade-lock (not (identical? @upgrade-lock :write)))
+      (let [[^ReentrantLock write-lock all-watched-paths] (:write-lock (:db tx))
+            upgrade-watched-paths (:upgrade-watched-paths tx)]
+        (.unlock (.readLock ^ReentrantReadWriteLock (:compaction-lock (:db tx))))
+        (reset! upgrade-lock nil)
+        (.lock write-lock)
+        (reset! upgrade-lock :write)
+        (swap! all-watched-paths disj upgrade-watched-paths)
+        (let [safe (upgrade-safe? @upgrade-watched-paths @upgrade-viewed-paths)
+              tx (make-transaction (:db tx) (:touched-paths tx))]
+          (reset! upgrade-viewed-paths :transaction-invalidated-by-upgrade)
+          (when-not safe
+            (throw-upgrade-restart tx))
+          tx))
+      tx)))
+
+(defmacro with-upgradable-transaction [[database tx-symbol throw-on-upgrade] & body]
+  `(let [db# ~database]
+     (assert-db db#)
+     (let [[^ReentrantLock write-lock# all-watched-paths#] (:write-lock db#)
+           ^ReentrantReadWriteLock compaction-lock# (:compaction-lock ~database)
+           read-lock# (.readLock compaction-lock#)
+           watched-paths# (atom [])
+           active-lock# (atom :read)]
+       (try
+         (do
+           (.lock read-lock#)
+           (swap! all-watched-paths# conj watched-paths#)
+           (let [~tx-symbol (assoc (make-transaction db# [])
+                                   :upgrade-watched-paths watched-paths#
+                                   :upgrade-viewed-paths (atom [])
+                                   :upgrade-lock active-lock#)
+                 result-tx# (do ~@body)]
+             (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
+             (when (identical? @active-lock# :write)
+               (when (:upgrade-viewed-paths result-tx#)
+                 (throw-upgrade-invalidated-transaction))
+               (commit! result-tx#)
+               (update-touched-paths! result-tx# all-watched-paths#))))
+         (catch clojure.lang.ExceptionInfo e#
+           (if (and (:codax/upgraded-transaction (ex-data e#)) (not ~throw-on-upgrade))
+             (with-write-lock [db#]
+               (let [~tx-symbol (:codax/upgraded-transaction (ex-data e#))
+                     result-tx# (do ~@body)]
+                 (assert-txn result-tx#  "the body of `with-upgradable-transaction` must evaluate to a transaction")
+                 (commit! result-tx#)
+                 (update-touched-paths! result-tx# all-watched-paths#)))
+             (throw e#)))
+         (finally
+           (swap! all-watched-paths# disj watched-paths#)
+           (case @active-lock#
+             :read (.unlock read-lock#)
+             :write (.unlock write-lock#)
+             nil))))
+     nil))
 
 ;;; Node Fetching
 
@@ -737,7 +854,7 @@
          total 0]
     (if node-id
       (let [node (get-node txn node-id)]
-        (recur (:next node)
+        (recur (long (:next node))
                (+ total (count (:records node)))))
       total)))
 

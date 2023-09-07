@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.4.0 (2023-07-20)
+
+* implement upgradable transactions (using `with-upgradable-transaction` macro)
+
 ## 1.3.1 (2019-05-21)
 
 * no longer AOT compiled
@@ -13,7 +17,7 @@
   * add `defpathtype` - define custom path type encodings by specifying an encoder and decoder
   * add `check-path-encoding` - helper function for testing new path type encodings
   * add `path-encoding-assignments` - helper function to view and avoid redefining existing path types
-  * specifiv documentation added to doc/types.md
+  * specific documentation added to doc/types.md
 * update `nippy` dependency to 2.14.0
 * simplify and update benchmarking
 

@@ -4,9 +4,7 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.3.1 is no longer AOT compiled
-
-Version 1.3.0 improves compaction to reduce disk space usage. It also enables custom path type definitions. See [CHANGELOG](https://github.com/dscarpetti/codax/blob/master/CHANGELOG.md) for more details.
+Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro)
 
 ### The Why
 
@@ -26,11 +24,13 @@ Codax provides the following guarantees:
 
 ### Production Ready?
 
-I have successfully used this library in production environments. That said, there are probably a few rough edges that could use smoothing.
+This library has been, and continues to be, successfully used in production environments. That said, there are probably a few rough edges that could use smoothing.
 
 ## Usage
 
 ### Basic API
+
+*Note: all public api symbols have doc-strings which may provide additional details.*
 
 **Database Functions**
 
@@ -46,6 +46,7 @@ These take a database argument and a transaction-symbol and bind the symbol to a
 
   - `with-read-transaction` - creates a read transaction
   - `with-write-transaction` - creates a write transaction (body must evaluate to a transaction or an exception will be thrown)
+  - `with-upgradable-transaction` - creates a read transaction that will upgrade to a write transaction if the transactions calls any modification function. Details and examples in [upgradable transactions.md](doc/upgradable-transactions.md). _added in 1.4.0_
 
 **In-Transaction Functions**
 
@@ -90,20 +91,19 @@ See [Seek Examples](#seek-examples)
 A `path` is a vector of keys similar to the `[k & ks]` used in function like `assoc-in` with a few exceptions:
 
   - they are **limited to the following types**:
-	- Symbols
-	- Keywords
-	- Strings
-	- Numbers (float/double use is _strongly discouraged_)
-	- true
-	- false
-	- nil
-	- java.time.Instant
-	- org.joda.time.DateTime
+    - Symbols
+    - Keywords
+    - Strings
+    - Numbers (float/double use is _strongly discouraged_)
+    - true
+    - false
+    - nil
+    - java.time.Instant
+    - org.joda.time.DateTime
   - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
-If you are you need support for additional types, please review [doc/types.md](https://github.com/dscarpetti/codax/blob/master/doc/types.md).
-
+If you need support for additional types, please review [doc/types.md](doc/types.md).
 
 ### Conformant Values
 
@@ -206,46 +206,46 @@ Write transactions block other write transactions (though they do not block read
   "create a user and assign them an id"
   [username]
   (c/with-write-transaction [db tx]
-	(when (c/get-at tx [:usernames username] )
-	  (throw (Exception. "username already exists")))
-	(let [user-id (c/get-at tx [:counters :id])
-		  user {:id user-id
-				:username username
-				:timestamp (System/currentTimeMillis)}]
-	  (-> tx
-		  (c/assoc-at [:users user-id] user)
-		  (c/assoc-at [:usernames username] user-id)
-		  (c/update-at [:counters :id] inc)
-		  (c/update-at [:counters :users] inc)))))
+    (when (c/get-at tx [:usernames username] )
+      (throw (Exception. "username already exists")))
+    (let [user-id (c/get-at tx [:counters :id])
+          user {:id user-id
+                :username username
+                :timestamp (System/currentTimeMillis)}]
+      (-> tx
+          (c/assoc-at [:users user-id] user)
+          (c/assoc-at [:usernames username] user-id)
+          (c/update-at [:counters :id] inc)
+          (c/update-at [:counters :users] inc)))))
 
 (defn get-user
   "fetch a user by their username"
   [username]
   (c/with-read-transaction [db tx]
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (c/get-at tx [:users user-id]))))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (c/get-at tx [:users user-id]))))
 
 (defn rename-user
   "change a username"
   [username new-username]
   (c/with-write-transaction [db tx]
-	(when (c/get-at tx [:usernames new-username] )
-	  (throw (Exception. "username already exists")))
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (-> tx
-		  (c/dissoc-at [:usernames username])
-		  (c/assoc-at [:usernames new-username] user-id)
-		  (c/assoc-at [:users user-id :username] new-username)))))
+    (when (c/get-at tx [:usernames new-username] )
+      (throw (Exception. "username already exists")))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (-> tx
+          (c/dissoc-at [:usernames username])
+          (c/assoc-at [:usernames new-username] user-id)
+          (c/assoc-at [:users user-id :username] new-username)))))
 
 (defn remove-user
   "remove a user"
   [username]
   (c/with-write-transaction [db tx]
-	(when-let [user-id (c/get-at tx [:usernames username])]
-	  (-> tx
-		  (c/dissoc-at [:username username])
-		  (c/dissoc-at [:users user-id])
-		  (c/update-at [:counters :users] dec)))))
+    (when-let [user-id (c/get-at tx [:usernames username])]
+      (-> tx
+          (c/dissoc-at [:username username])
+          (c/dissoc-at [:users user-id])
+          (c/update-at [:counters :users] dec)))))
 
 
 ;;;;; edit users
@@ -534,7 +534,7 @@ Insights, suggestions, and PRs are very welcome.
 
 ## License
 
-Copyright © 2018 David Scarpetti
+Copyright © 2023 David Scarpetti
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.

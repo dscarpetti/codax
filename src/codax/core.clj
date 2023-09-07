@@ -74,10 +74,14 @@
   by default, it does not)."
   ([tx]
    (store/assert-txn tx)
-   (ops/collect tx []))
+   (let [path (prefix-path tx [])
+         tx (store/view-path! tx path)]
+     (ops/collect tx path)))
   ([tx path]
    (store/assert-txn tx)
-   (ops/collect tx (prefix-path tx path))))
+   (let [path (prefix-path tx path)
+         tx (store/view-path! tx path)]
+     (ops/collect tx path))))
 
 (defn assoc-at
   "Associates a path with a value or object, overwriting the current value (and all nested
@@ -90,7 +94,9 @@
   by default, it does not)."
   [tx path val-or-map]
   (store/assert-txn tx)
-  (ops/assoc-path tx (prefix-path tx path) val-or-map))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (ops/assoc-path tx path val-or-map)))
 
 (defn update-at
   "Runs a function on the current map or value at the supplied path and `assoc-at`s the result.
@@ -102,13 +108,16 @@
   by default, it does not)."
   [tx path f & args]
   (store/assert-txn tx)
-  (apply ops/update-path tx (prefix-path tx path) f args))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (apply ops/update-path tx path f args)))
 
 (defn merge-at
   [tx path m]
   (store/assert-txn tx)
-  (apply ops/update-path tx (prefix-path tx path) merge m))
-
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (apply ops/update-path tx path merge m)))
 
 (defn dissoc-at
   "Deletes all values at the supplied path.
@@ -120,7 +129,9 @@
   by default, it does not)."
   [tx path]
   (store/assert-txn tx)
-  (ops/delete-path tx (prefix-path tx path)))
+  (let [path (prefix-path tx path)
+        tx (store/touch-path! tx path)]
+    (ops/delete-path tx path)))
 
 ;;;;
 
@@ -131,7 +142,9 @@
   by default, it does not)."
   [tx path & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-path tx (prefix-path tx path) limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-path tx path limit reverse)))
 
 (defn seek-prefix
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -143,7 +156,9 @@
   by default, it does not)."
   [tx path val-prefix & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-prefix tx (prefix-path tx path) val-prefix limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-prefix tx path val-prefix limit reverse)))
 
 (defn seek-prefix-range
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -155,8 +170,9 @@
   by default, it does not)."
   [tx path start-prefix end-prefix & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-prefix-range tx (prefix-path tx path) start-prefix end-prefix limit reverse))
-
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-prefix-range tx path start-prefix end-prefix limit reverse)))
 
 (defn seek-from
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -166,7 +182,9 @@
   by default, it does not)."
   [tx path start-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-from tx (prefix-path tx path) start-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-from tx path start-val limit reverse)))
 
 (defn seek-to
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -176,7 +194,9 @@
   by default, it does not)."
   [tx path end-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-to tx (prefix-path tx path) end-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-to tx path end-val limit reverse)))
 
 (defn seek-range
   "Provides key-value pairs ordered by key of the map at the provided `path`
@@ -186,7 +206,9 @@
   by default, it does not)."
   [tx path start-val end-val & {:keys [limit reverse]}]
   (store/assert-txn tx)
-  (ops/seek-range tx (prefix-path tx path) start-val end-val limit reverse))
+  (let [path (prefix-path tx path)
+        tx (store/view-path! tx path)]
+    (ops/seek-range tx path start-val end-val limit reverse)))
 
 
 ;;;; Transactions
@@ -209,6 +231,88 @@
   `(store/with-read-transaction [~database ~tx-symbol]
      (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
        ~@body)))
+
+(defmacro with-upgradable-transaction
+  "Creates an upgradable transaction object and assigns it to the `tx-symbol`.
+  This transaction object can be passed to any of the transaction functions.
+  The `body` must evaluate to this object so it can potentially be committed.
+
+  The transaction begins as a read transaction. If a modifying function is
+  encountered the transaction may be restarted as a write transaction depending
+  on if a previously read path has potentially been changed by a write in
+  another transaction (Modifying functions include `assoc-at`, `update-at`,
+  `merge-at`, & `dissoc-at`)
+
+  Evaluates to nil unless a `:result-path` is supplied in which case it
+  evaluates to the result of calling `(get-at tx <:result-path>)` at the
+  end of the transaction.
+
+  If another write transaction is initiated between the start of the transaction
+  and an upgrade the body may be re-evaluated unless `:throw-on-upgrade` is
+  true, in which case a an ExceptionInfo is thrown with the data:
+  `{:codax/upgraded-transaction <tx>}`"
+  ;; NOTE: if you catch this error within the upgradable transaction you MUST use
+  ;; the <tx> object provided in the ex-data. This is not generally recommended and
+  ;; should be regarded as experimental."
+  [[database tx-symbol & {:keys [prefix result-path throw-on-upgrade] :as options}] & body]
+  (assert (zero? (count (dissoc options :prefix :result-path :throw-on-upgrade))) (str "Unrecognized with-upgradable-transaction options: " (set (keys (dissoc options :prefix :result-path :throw-on-upgrade)))))
+  (if (nil? result-path)
+    `(store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-upgrade]
+       (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)]
+         ~@body))
+    `(let [res# (atom nil)]
+       (store/with-upgradable-transaction [~database ~tx-symbol ~throw-on-upgrade]
+         (let [~tx-symbol (set-prefix ~tx-symbol ~prefix)
+               tx-res# (do ~@body)]
+           (reset! res# (get-at tx-res# ~result-path))
+           tx-res#))
+       @res#)))
+
+(defmacro try-upgrade
+  "Relies on Unsupported Behavior. Used for tests.
+
+  Macro to simplify catching upgrading transactions when using the
+  `with-upgradable-transaction` macro. If an upgrading transaction
+  exception is caught the symbol in the catch clause is set to the
+  upgraded transaction. All other exceptions are re-thrown.
+
+  (try-upgrade
+    <expression-that-might-trigger-upgrade>
+    (catch <upgraded-tx-symbol>
+      <forms>)
+    (finally <cleanup-forms>)) ; finally clause is optional
+
+  Example:
+
+  (with-upgradable-transaction [db tx]
+    ...
+    (try-upgrade
+      (assoc-at tx [:foo] 'bar)
+      (catch upgraded-tx ; something must have changed
+        (assoc-at upgraded-tx [:foo] 'baz))
+      (finally
+        (my-cleanup-function))))"
+  {:deprecated "1.4.0"}
+  ([expr catch-clause]
+   `(try-upgrade ~expr ~catch-clause (finally)))
+  ([expr catch-clause finally-clause]
+   (assert (and (list? catch-clause)
+                (= (first catch-clause) 'catch)
+                (symbol? (second catch-clause))
+                (not (empty? (rest catch-clause))))
+           "catch clause must be in the form (catch upgraded-tx-symbol form & forms)")
+   (assert (and (list? finally-clause)
+                (= (first finally-clause) 'finally))
+           "finally clause must be in the form (finally & forms)")
+   `(try
+      ~expr
+      (catch clojure.lang.ExceptionInfo e#
+        (if-let [~(second catch-clause) (:codax/upgraded-transaction (ex-data e#))]
+          (do
+            ~@(nthrest catch-clause 2))
+          (throw e#)))
+      (finally
+        ~@(rest finally-clause)))))
 
 ;;;; Direct Database Convenience Functions
 

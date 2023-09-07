@@ -296,8 +296,6 @@
           {:user "Chuck" :time "2020-06-07T20:30:00Z" :body "Anybody here?"}
           {:user "Chuck" :time "2020-06-07T20:35:00Z" :body "Guess not..."})))))
 
-
-
 (deftest simple-use
   (c/destroy-database! "test-databases/example-database")
   (let [db (c/open-database! "test-databases/example-database")]
