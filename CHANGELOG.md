@@ -3,6 +3,11 @@
 ## 1.4.0 (2023-07-20)
 
 * implement upgradable transactions (using `with-upgradable-transaction` macro)
+* update taoensso/nippy to 3.2.0 to address RCE vulnerability: [taoensso/nippy#130](https://github.com/taoensso/nippy/issues/130)
+
+### Upgrading From 1.3.1
+
+The upgraded nippy requires non-standard types to be whitelisted before they can be decoded. When opening a database created with an earlier version of codax nippy may throw security errors when thawing non-standard values. This is easily corrected. See discussion in [#30](https://github.com/dscarpetti/codax/pull/30)
 
 ## 1.3.1 (2019-05-21)
 

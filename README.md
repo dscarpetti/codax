@@ -4,7 +4,9 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro)
+Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro) and **fixes an RCE vulnerability***.
+
+See the [changelog](CHANGELOG.md) for details on upgrading from earlier codax versions.
 
 ### The Why
 
@@ -111,6 +113,7 @@ If you need support for additional types, please review [doc/types.md](doc/types
     - _this will only be relevant to you if you are storing custom records or exotic datatypes. Out of the box, virtually all standard clojure datatypes are supported (i.e. you don't need to do anything special to store lists/vectors/sets/etc.)_
     - _the serialization is performed automatically, you **do not** need to serialize values manually_
   - maps and nested maps whose **keys conform to the valid path types** listed above
+  - custom types may require whitelisting, see [#30](https://github.com/dscarpetti/codax/pull/30)
 
 ### Transactions
 
