@@ -1,7 +1,6 @@
 (ns codax.pathwise
   (:require
-   [clojure.string :as str]
-   [clj-time.format :as joda]))
+   [clojure.string :as str]))
 
 (def +delim+ (char 0x00))
 (def +vector+ (char 0xa0))
@@ -110,10 +109,6 @@
 (defpathtype [0x70 java.lang.String] identity identity)
 
 (defpathtype [0x25 java.time.Instant] str java.time.Instant/parse)
-
-(defpathtype [0x24 org.joda.time.DateTime]
-  (partial joda/unparse (joda/formatters :basic-date-time))
-  (partial joda/parse (joda/formatters :basic-date-time)))
 
 (defpathtype [0xa0 clojure.lang.PersistentVector clojure.lang.PersistentList]
   #(apply str (map encode %))

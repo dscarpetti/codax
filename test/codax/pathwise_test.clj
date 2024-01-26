@@ -3,7 +3,6 @@
    [codax.test-logging :refer [logln]]
    [codax.pathwise :refer :all]
    [codax.pathwise-legacy :as legacy]
-   [clj-time.core :as joda]
    [clojure.string :as str]
    [clojure.test :refer :all]
    [clojure.pprint :refer [pprint]]))
@@ -74,11 +73,9 @@
 
 (defet long-string-val "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty")
 
-(defet joda-time (joda/now))
-
 (defet java-time (java.time.Instant/now))
 
-(defet vec-1 [0 0.0 -1 1 -1.1 1.1 nil true false 'symbol "string" :keyword (joda/now) (java.time.Instant/now)])
+(defet vec-1 [0 0.0 -1 1 -1.1 1.1 nil true false 'symbol "string" :keyword (java.time.Instant/now)])
 (defet vec-2 [nil])
 (defet vec-3 [nil nil])
 (defet vec-4 [nil nil nil])
