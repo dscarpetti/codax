@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.5.0 (2024-02-15
+
+* Allow unsorted maps and sets to be used as keys in paths
+
 ## 1.4.0 (2023-07-20)
 
 * implement upgradable transactions (using `with-upgradable-transaction` macro)
