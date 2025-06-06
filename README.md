@@ -14,7 +14,6 @@ Even simple programs frequently benefit from saving data to disk. Unfortunately,
 
 Fundamentally, I wrote this library for myself in an ongoing effort to make my own life simpler and my own programming more fun. I wanted to share it with the community in the hopes that others may find it does the same for them.
 
-
 ### ACID Compliance
 
 Codax provides the following guarantees:
@@ -26,7 +25,9 @@ Codax provides the following guarantees:
 
 ### Production Ready?
 
-This library has been, and continues to be, successfully used in production environments. That said, there are probably a few rough edges that could use smoothing.
+This library has been, and continues to be, successfully used in production environments.
+
+If your project may eventually outgrow codax, keep an eye on [Dresser](https://github.com/Frozenlock/dresser), which can use codax under the hood and allows you to switch database backends later.
 
 ## Usage
 
