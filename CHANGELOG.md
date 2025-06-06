@@ -1,5 +1,21 @@
 # Change Log
 
+## 1.4.1 (2025-06-20)
+
+* remove deprecated clj-time dependency
+
+If an existing database made use of joda/clj-time times you will need to renable support by including the clj-time dependency in your project and defining the path type with:
+
+``` clojure
+
+(require [clj-time.format :as joda])
+
+(defpathtype [0x24 org.joda.time.DateTime]
+  (partial joda/unparse (joda/formatters :basic-date-time))
+  (partial joda/parse (joda/formatters :basic-date-time)))
+
+```
+
 ## 1.4.0 (2023-07-20)
 
 * implement upgradable transactions (using `with-upgradable-transaction` macro)

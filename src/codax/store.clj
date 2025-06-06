@@ -1,7 +1,5 @@
 (ns codax.store
   (:require
-   [clj-time.core :as time]
-   [clj-time.format :as format-time]
    [clojure.core.cache :as cache]
    [clojure.java.io :as io]
    [taoensso.nippy :as nippy])
@@ -10,6 +8,8 @@
    [java.nio ByteBuffer]
    [java.nio.channels FileChannel]
    [java.nio.file Files Paths StandardCopyOption StandardOpenOption]
+   [java.time Instant ZoneId]
+   [java.time.format DateTimeFormatter]
    [java.util.concurrent.locks ReentrantReadWriteLock ReentrantLock]))
 
 ;;;;; Settings
@@ -188,11 +188,11 @@
 (defn- move-file-atomically [from to]
     (Files/move (to-path from) (to-path to) (into-array [StandardCopyOption/ATOMIC_MOVE])))
 
-(def ts-formatter (format-time/formatters :basic-date-time-no-ms))
+(def ts-formatter (.withZone (DateTimeFormatter/ofPattern "YYYYMMdd'T'HHmmss'Z'") (ZoneId/of "UTC")))
 
 (defn- relocate-compact-files [path backup-fn]
   (if backup-fn
-    (let [ts-suffix (str "_" (format-time/unparse ts-formatter (time/now)) "_" (System/nanoTime))]
+    (let [ts-suffix (str "_" (.format ts-formatter (Instant/now)) "_" (System/nanoTime))]
       (move-file-atomically (str path "/nodes") (str path "/nodes" ts-suffix))
       (move-file-atomically (str path "/manifest") (str path "/manifest" ts-suffix))
       (future (backup-fn {:dir path
