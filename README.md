@@ -4,7 +4,7 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.5.0 allows unsorted sets and maps to be used as [path](#paths) keys.
+Version 1.5.0 allows unsorted sets and maps to be used as [path](#paths) keys. It also reserves pathwise encoding codes `0xa0` - `0xaf`.
 
 Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro) and **fixes an RCE vulnerability**.
 
