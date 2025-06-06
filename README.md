@@ -4,7 +4,7 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
-Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro), removes built-in support for clj-time, and **fixes an RCE vulnerability**.
+Version 1.4.0+ implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro), removes built-in support for clj-time, and **fixes an RCE vulnerability**.
 
 See the [changelog](CHANGELOG.md) for details on upgrading from earlier codax versions.
 

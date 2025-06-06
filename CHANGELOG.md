@@ -1,10 +1,13 @@
 # Change Log
 
+## 1.4.1 (2025-06-20)
+
+* remove deprecated clj-time dependency
+
 ## 1.4.0 (2023-07-20)
 
 * implement upgradable transactions (using `with-upgradable-transaction` macro)
 * update taoensso/nippy to 3.2.0 to address RCE vulnerability: [taoensso/nippy#130](https://github.com/taoensso/nippy/issues/130)
-* remove deprecated clj-time dependency
 
 ### Upgrading From 1.3.1
 
