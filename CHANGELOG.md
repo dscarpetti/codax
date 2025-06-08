@@ -1,6 +1,10 @@
 # Change Log
 
-## 1.4.1 (2025-06-20)
+## 1.4.2 (2025-06-08)
+
+* bugfix: remove clj-time from project.clj
+
+## 1.4.1 (2025-06-06)
 
 * remove deprecated clj-time dependency
 
