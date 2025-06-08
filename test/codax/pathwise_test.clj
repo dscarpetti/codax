@@ -280,3 +280,20 @@
 
 (deftest random-path-test
   (is (test-many-random 100 :hide-success true)))
+
+(deftest map-ordering-1
+  (is (= (encode {:a 1, {:k :b} 2})
+         (encode {{:k :b} 2 :a 1}))))
+
+(deftest map-ordering-2
+  (let [f1 {:a 1, {:k :b} 2}
+        e1 (encode f1)
+        d1 (decode e1)
+        f2 {{:k :b} 2 :a 1}
+        e2 (encode f2)
+        d2 (decode e2)]
+    (is (= f1 d1 f2 d2))))
+
+(deftest set-ordering-1
+  (is (= (encode #{#{:a :b} :c {:a 1}})
+         (encode #{{:a 1} :c #{:b :a}}))))
