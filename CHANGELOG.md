@@ -9,9 +9,10 @@ Sorted maps and sets remain unsupported in paths. This is for several reasons in
 
 *Note: if you have user-defined encoding types using codes between `0xa0` and `0xaf` a warning will be printed but as long as you do not use the new supported types (e.g. maps & sets) in paths your code should continue to work.*
 
-## 1.4.2 (2025-06-08)
+## 1.4.2 & 1.4.3 (2025-06-08)
 
 * bugfix: remove clj-time from project.clj
+* bugfix: remove clj-time references in tests
 
 ## 1.4.1 (2025-06-06)
 
