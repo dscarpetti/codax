@@ -1,8 +1,9 @@
 # Change Log
 
-## 1.4.2 (2025-06-08)
+## 1.4.2 & 1.4.3 (2025-06-08)
 
 * bugfix: remove clj-time from project.clj
+* bugfix: remove clj-time references in tests
 
 ## 1.4.1 (2025-06-06)
 
