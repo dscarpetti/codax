@@ -1,10 +1,9 @@
-(defproject codax "1.4.1"
+(defproject codax "1.4.2"
   :description "Codax is an idiomatic transactional embedded database for clojure"
   :url "https://github.com/dscarpetti/codax"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[com.taoensso/nippy "3.2.0"]
-                 [clj-time "0.13.0"]
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/core.cache "0.6.5"]]
   :target-path "target/%s"
