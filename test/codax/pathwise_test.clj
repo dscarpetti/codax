@@ -292,7 +292,29 @@
         f2 {{:k :b} 2 :a 1}
         e2 (encode f2)
         d2 (decode e2)]
+    (is (= e1 e2))
     (is (= f1 d1 f2 d2))))
+
+(defn randomize-map-ordering [x]
+  (cond
+    (map? x) (into {} (shuffle (map (fn [[k v]] [k (randomize-map-ordering v)]) x)))
+    (set? x) (into #{} (map randomize-map-ordering x))
+    (vector? x) (mapv randomize-map-ordering x)
+    :else x))
+
+(deftest random-map-ordering
+  (loop [n 1000]
+    (when (pos? n)
+      (let [m1 (gen-random-map :max-length 12)
+            e1 (encode m1)
+            d1 (decode e1)
+
+            m2 (randomize-map-ordering m1)
+            e2 (encode m2)
+            d2 (decode e2)]
+        (is (= e1 e2))
+        (is (= m1 m2 d1 d2))
+        (recur (dec n))))))
 
 (deftest set-ordering-1
   (is (= (encode #{#{:a :b} :c {:a 1}})
