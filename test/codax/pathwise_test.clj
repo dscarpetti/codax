@@ -145,7 +145,7 @@
 
 ;;;; encoding decoding errors
 
-(deftest no-encoder-for-element
+#_(deftest no-encoder-for-element
   (try
     (do
       (encode #{})
@@ -156,7 +156,7 @@
         (is (= type clojure.lang.PersistentHashSet))
         (is (= element #{}))))))
 
-(deftest no-decoder-for-element
+#_(deftest no-decoder-for-element
   (try
     (do
       (decode (str (char 0x2) #{:unrecognized} (char 0x00)))
@@ -213,12 +213,14 @@
     (reduce str "" (take length (iterate (fn [_] (char (+ min-char (int (rand max-char))))) nil)))))
 
 
-(declare gen-random-vector gen-random-element)
+(declare gen-random-vector gen-random-element gen-random-set gen-random-map)
 
-(defn gen-random-element [& {:keys [max-vector-length]}]
-  (let [num (rand 12)]
+(defn gen-random-element [& {:keys [max-length]}]
+  (let [num (rand 16)]
     (cond
-      (> num 10) (gen-random-vector :max-length max-vector-length)
+      (> num 14) (gen-random-map :max-length max-length)
+      (> num 12) (gen-random-set :max-length max-length)
+      (> num 10) (gen-random-vector :max-length max-length)
       (> num 9) nil
       (> num 8) true
       (> num 7) false
@@ -235,9 +237,27 @@
   (let [max-length (if max-length (dec max-length) 15)
         length (int (Math/floor (rand max-length)))]
     (if (> length 0)
-      (vec (take (inc length) (rest (iterate (fn [_] (gen-random-element :max-vector-length max-length)) nil))))
+      (vec (take (inc length) (rest (iterate (fn [_] (gen-random-element :max-length max-length)) nil))))
       [])))
 
+(defn gen-random-set [& {:keys [max-length]}]
+  (let [max-length (if max-length (dec max-length) 15)
+        length (int (Math/floor (rand max-length)))]
+    (if (> length 0)
+      (set (take (inc length) (rest (iterate (fn [_] (gen-random-element :max-length max-length)) nil))))
+      #{})))
+
+(defn gen-random-map [& {:keys [max-length]}]
+  (let [max-length (if max-length (dec max-length) 15)
+        length (int (Math/floor (rand max-length)))]
+    (if (> length 0)
+      (->> (iterate (fn [_] (gen-random-element :max-length max-length)) nil)
+           rest
+           (take (inc length))
+           (partition 2)
+           (map vec)
+           (into {}))
+      {})))
 
 (defn test-random [& {:keys [hide-success]}]
   (test-encoding (gen-random-vector) :hide-success hide-success))
@@ -260,3 +280,42 @@
 
 (deftest random-path-test
   (is (test-many-random 100 :hide-success true)))
+
+(deftest map-ordering-1
+  (is (= (encode {:a 1, {:k :b} 2})
+         (encode {{:k :b} 2 :a 1}))))
+
+(deftest map-ordering-2
+  (let [f1 {:a 1, {:k :b} 2}
+        e1 (encode f1)
+        d1 (decode e1)
+        f2 {{:k :b} 2 :a 1}
+        e2 (encode f2)
+        d2 (decode e2)]
+    (is (= e1 e2))
+    (is (= f1 d1 f2 d2))))
+
+(defn randomize-map-ordering [x]
+  (cond
+    (map? x) (into {} (shuffle (map (fn [[k v]] [k (randomize-map-ordering v)]) x)))
+    (set? x) (into #{} (map randomize-map-ordering x))
+    (vector? x) (mapv randomize-map-ordering x)
+    :else x))
+
+(deftest random-map-ordering
+  (loop [n 1000]
+    (when (pos? n)
+      (let [m1 (gen-random-map :max-length 12)
+            e1 (encode m1)
+            d1 (decode e1)
+
+            m2 (randomize-map-ordering m1)
+            e2 (encode m2)
+            d2 (decode e2)]
+        (is (= e1 e2))
+        (is (= m1 m2 d1 d2))
+        (recur (dec n))))))
+
+(deftest set-ordering-1
+  (is (= (encode #{#{:a :b} :c {:a 1}})
+         (encode #{{:a 1} :c #{:b :a}}))))

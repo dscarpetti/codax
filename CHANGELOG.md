@@ -1,5 +1,14 @@
 # Change Log
 
+## 1.5.0 (2025-06-20)
+
+* Allow unsorted maps and sets to be used as keys in paths using codes `0xa0` `0xa1`.
+* Reserve all codes `0xa2` - `0xaf` for future use.
+
+Sorted maps and sets remain unsupported in paths. This is for several reasons including that the sorting criteria cannot be reliably encoded.
+
+*Note: if you have user-defined encoding types using codes between `0xa0` and `0xaf` a warning will be printed but as long as you do not use the new supported types (e.g. maps & sets) in paths your code should continue to work.*
+
 ## 1.4.2 & 1.4.3 (2025-06-08)
 
 * bugfix: remove clj-time from project.clj

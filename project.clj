@@ -1,4 +1,4 @@
-(defproject codax "1.4.3"
+(defproject codax "1.5.0"
   :description "Codax is an idiomatic transactional embedded database for clojure"
   :url "https://github.com/dscarpetti/codax"
   :license {:name "Eclipse Public License"

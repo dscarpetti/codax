@@ -4,6 +4,8 @@ Codax is an idiomatic transactional embedded database for clojure. A codax datab
 
 [![Clojars Project](http://clojars.org/codax/latest-version.svg)](http://clojars.org/codax)
 
+Version 1.5.0 allows unsorted sets and maps to be used as [path](#paths) keys. It also reserves pathwise encoding codes `0xa0` - `0xaf`.
+
 Version 1.4.1 removes built-in support for clj-time. If you have an older database using clj-time see the [changelog](CHANGELOG.md)
 
 Version 1.4.0 implements [upgradable transactions](doc/upgradable-transactions.md). (using `with-upgradable-transaction` macro) and **fixes an RCE vulnerability**.
@@ -102,6 +104,9 @@ A `path` is a vector of keys similar to the `[k & ks]` used in function like `as
     - false
     - nil
     - java.time.Instant
+    - unsorted maps
+    - unsorted sets
+
   - the path can only target nested maps, and **cannot be used to descend into other data structures (e.g. vectors)**.
   - you can get the empty path (e.g. `(get-at db [])` returns the full database) but you cannot modify it (e.g. `(assoc-at [] :foo)` throws an error)
 
